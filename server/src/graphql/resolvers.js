@@ -79,6 +79,10 @@ async function createWorkspaceResolver(_parent, args, context) {
   const user = assertAuthenticated(context);
   const name = String(args.input.name || '').trim();
 
+  if (!['ADMIN', 'MANAGER'].includes(user.role || 'MEMBER')) {
+    throw new Error('Only ADMIN or MANAGER accounts can create workspaces');
+  }
+
   if (name.length < 2) {
     throw new Error('Workspace name must be at least 2 characters');
   }
@@ -389,7 +393,11 @@ const resolvers = {
         throw new Error('Invalid credentials');
       }
 
-      const token = generateAuthToken({ ...user.toObject(), role: 'MEMBER' }, context.env.JWT_SECRET, context.env.JWT_EXPIRES_IN);
+      const token = generateAuthToken(
+        { ...user.toObject(), role: user.role || 'MEMBER' },
+        context.env.JWT_SECRET,
+        context.env.JWT_EXPIRES_IN
+      );
       user.password = undefined;
 
       return { token, user };

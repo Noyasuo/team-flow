@@ -1,5 +1,14 @@
 const express = require('express');
-const { User, Project, Task, Workspace } = require('../models');
+const {
+  Activity,
+  Comment,
+  Notification,
+  Project,
+  Task,
+  Team,
+  User,
+  Workspace,
+} = require('../models');
 
 const TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
@@ -92,6 +101,96 @@ function basicAuthMiddleware(env) {
 
     return next();
   };
+}
+
+function uniqueIds(values) {
+  return [...new Set((values || []).filter(Boolean).map((value) => String(value)))];
+}
+
+async function deleteCommentsByIds(commentIds) {
+  const ids = uniqueIds(commentIds);
+  if (!ids.length) {
+    return;
+  }
+
+  await Promise.all([
+    Comment.deleteMany({ _id: { $in: ids } }),
+    Activity.deleteMany({ entityType: 'COMMENT', entityId: { $in: ids } }),
+    Notification.deleteMany({ referenceType: 'COMMENT', referenceId: { $in: ids } }),
+  ]);
+}
+
+async function deleteTasksByIds(taskIds) {
+  const ids = uniqueIds(taskIds);
+  if (!ids.length) {
+    return;
+  }
+
+  const commentIds = await Comment.distinct('_id', { task: { $in: ids } });
+
+  await Promise.all([
+    deleteCommentsByIds(commentIds),
+    Activity.deleteMany({ entityType: 'TASK', entityId: { $in: ids } }),
+    Notification.deleteMany({ referenceType: 'TASK', referenceId: { $in: ids } }),
+    Task.deleteMany({ _id: { $in: ids } }),
+  ]);
+}
+
+async function deleteProjectsByIds(projectIds) {
+  const ids = uniqueIds(projectIds);
+  if (!ids.length) {
+    return;
+  }
+
+  const taskIds = await Task.distinct('_id', { project: { $in: ids } });
+
+  await Promise.all([
+    deleteTasksByIds(taskIds),
+    Activity.deleteMany({ entityType: 'PROJECT', entityId: { $in: ids } }),
+    Notification.deleteMany({ referenceType: 'PROJECT', referenceId: { $in: ids } }),
+    Project.deleteMany({ _id: { $in: ids } }),
+  ]);
+}
+
+async function deleteWorkspacesByIds(workspaceIds) {
+  const ids = uniqueIds(workspaceIds);
+  if (!ids.length) {
+    return;
+  }
+
+  const projectIds = await Project.distinct('_id', { workspace: { $in: ids } });
+
+  await Promise.all([
+    deleteProjectsByIds(projectIds),
+    Activity.deleteMany({ workspace: { $in: ids } }),
+    Notification.deleteMany({ workspace: { $in: ids } }),
+    Workspace.deleteMany({ _id: { $in: ids } }),
+  ]);
+}
+
+async function deleteUserAndDependencies(userId) {
+  const [ownedWorkspaceIds, ownedTeamIds, createdProjectIds, createdTaskIds, authoredCommentIds] = await Promise.all([
+    Workspace.distinct('_id', { owner: userId }),
+    Team.distinct('_id', { owner: userId }),
+    Project.distinct('_id', { createdBy: userId }),
+    Task.distinct('_id', { createdBy: userId }),
+    Comment.distinct('_id', { author: userId }),
+  ]);
+
+  await Promise.all([
+    Workspace.updateMany({ 'members.user': userId }, { $pull: { members: { user: userId } } }),
+    Team.updateMany({ 'members.user': userId }, { $pull: { members: { user: userId } } }),
+    Task.updateMany({ assignee: userId }, { $set: { assignee: null } }),
+    deleteWorkspacesByIds(ownedWorkspaceIds),
+    Team.deleteMany({ _id: { $in: uniqueIds(ownedTeamIds) } }),
+    deleteProjectsByIds(createdProjectIds),
+    deleteTasksByIds(createdTaskIds),
+    deleteCommentsByIds(authoredCommentIds),
+    Activity.deleteMany({ actor: userId }),
+    Notification.deleteMany({ user: userId }),
+  ]);
+
+  await User.findByIdAndDelete(userId);
 }
 
 function layout(title, content, activePath = '/admin') {
@@ -492,6 +591,9 @@ function createAdminRouter(env) {
                 <form method="POST" action="/admin/users/${user._id}/toggle-active" class="inline">
                   <button class="btn secondary tiny" type="submit">${user.isActive ? 'Disable' : 'Enable'}</button>
                 </form>
+                <form method="POST" action="/admin/users/${user._id}/delete" class="inline" onsubmit="return confirm('Delete this user and remove their related records? This cannot be undone.');">
+                  <button class="btn danger tiny" type="submit">Delete</button>
+                </form>
               </div>
             </td>
           </tr>`;
@@ -535,7 +637,7 @@ function createAdminRouter(env) {
         <section class="card">
           <div class="card-head">
             <h3>Users</h3>
-            <p class="muted">Manage activation state, with search and filters.</p>
+            <p class="muted">Manage activation state, search filters, and irreversible account deletion.</p>
           </div>
           <div class="toolbar">
             <form method="GET" action="/admin/users">
@@ -608,6 +710,16 @@ function createAdminRouter(env) {
       return res.redirect(`/admin/users?ok=User%20${user.isActive ? 'enabled' : 'disabled'}%20successfully`);
     }
     return res.redirect('/admin/users?error=User%20not%20found');
+  });
+
+  router.post('/users/:id/delete', async (req, res) => {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.redirect('/admin/users?error=User%20not%20found');
+    }
+
+    await deleteUserAndDependencies(user._id);
+    return res.redirect('/admin/users?ok=User%20deleted%20successfully');
   });
 
   router.get('/workspaces', async (req, res) => {
@@ -742,10 +854,7 @@ function createAdminRouter(env) {
       return res.redirect('/admin/workspaces?error=Workspace%20not%20found');
     }
 
-    const projectIds = await Project.find({ workspace: ws._id }).distinct('_id');
-    await Task.deleteMany({ project: { $in: projectIds } });
-    await Project.deleteMany({ workspace: ws._id });
-    await Workspace.findByIdAndDelete(ws._id);
+    await deleteWorkspacesByIds([ws._id]);
 
     return res.redirect('/admin/workspaces?ok=Workspace%20deleted%20successfully');
   });
@@ -824,8 +933,7 @@ function createAdminRouter(env) {
   });
 
   router.post('/projects/:id/delete', async (req, res) => {
-    await Project.findByIdAndDelete(req.params.id);
-    await Task.deleteMany({ project: req.params.id });
+    await deleteProjectsByIds([req.params.id]);
     res.redirect('/admin/projects?ok=Project%20deleted%20successfully');
   });
 
@@ -926,7 +1034,7 @@ function createAdminRouter(env) {
   });
 
   router.post('/tasks/:id/delete', async (req, res) => {
-    await Task.findByIdAndDelete(req.params.id);
+    await deleteTasksByIds([req.params.id]);
     res.redirect('/admin/tasks?ok=Task%20deleted%20successfully');
   });
 

@@ -14,6 +14,7 @@ type SessionUser = {
   id: string;
   name: string;
   email: string;
+  role?: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
   title?: string;
 };
 
@@ -40,13 +41,41 @@ function readStoredUser(): SessionUser | null {
   }
 }
 
+function decodeRoleFromToken(token: string): SessionUser['role'] | null {
+  try {
+    const payloadPart = token.split('.')[1];
+    if (!payloadPart) {
+      return null;
+    }
+
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const parsed = JSON.parse(window.atob(padded)) as { role?: unknown };
+
+    if (parsed.role === 'ADMIN' || parsed.role === 'MANAGER' || parsed.role === 'MEMBER' || parsed.role === 'VIEWER') {
+      return parsed.role;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
 
   useEffect(() => {
-    setToken(window.localStorage.getItem(TOKEN_KEY));
-    setUser(readStoredUser());
+    const storedToken = window.localStorage.getItem(TOKEN_KEY);
+    const storedUser = readStoredUser();
+
+    setToken(storedToken);
+    setUser(
+      storedUser && storedToken && !storedUser.role
+        ? { ...storedUser, role: decodeRoleFromToken(storedToken) ?? 'MEMBER' }
+        : storedUser
+    );
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -55,10 +84,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAuthenticated: Boolean(token),
       setSession: (nextToken: string, nextUser: SessionUser) => {
+        const nextRole = nextUser.role ?? decodeRoleFromToken(nextToken) ?? 'MEMBER';
+        const sessionUser = { ...nextUser, role: nextRole };
         window.localStorage.setItem(TOKEN_KEY, nextToken);
-        window.localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+        window.localStorage.setItem(USER_KEY, JSON.stringify(sessionUser));
         setToken(nextToken);
-        setUser(nextUser);
+        setUser(sessionUser);
       },
       logout: () => {
         window.localStorage.removeItem(TOKEN_KEY);

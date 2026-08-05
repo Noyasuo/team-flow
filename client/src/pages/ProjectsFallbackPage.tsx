@@ -4,11 +4,16 @@ import dayjs from 'dayjs';
 import { Link } from 'react-router-dom';
 import { CREATE_PROJECT, PROJECTS, WORKSPACES } from '../lib/graphql';
 import { useWorkspaceContext } from '../context/WorkspaceContext';
+import { useAuth } from '../context/AuthContext';
 
 type WorkspaceResult = {
   workspaces: Array<{
     id: string;
     name: string;
+    members: Array<{
+      role: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
+      user: { id: string };
+    }>;
   }>;
 };
 
@@ -24,6 +29,7 @@ type ProjectResult = {
 };
 
 export function ProjectsFallbackPage() {
+  const { user } = useAuth();
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext();
   const { data: workspacesData, loading: workspacesLoading } =
     useQuery<WorkspaceResult>(WORKSPACES);
@@ -32,6 +38,10 @@ export function ProjectsFallbackPage() {
 
   const activeWorkspace = workspacesData?.workspaces?.find(w => w.id === selectedWorkspaceId) ??
                          workspacesData?.workspaces?.[0] ?? null;
+
+  const activeWorkspaceRole =
+    activeWorkspace?.members.find((member) => member.user.id === user?.id)?.role ?? null;
+  const canCreateProject = activeWorkspaceRole ? ['ADMIN', 'MANAGER'].includes(activeWorkspaceRole) : false;
 
   // Sync selected workspace when first workspace loads
   React.useEffect(() => {
@@ -52,6 +62,11 @@ export function ProjectsFallbackPage() {
 
   async function handleCreateProject() {
     if (!activeWorkspace) {
+      return;
+    }
+
+    if (!canCreateProject) {
+      window.alert('You do not have permission to create projects in this workspace.');
       return;
     }
 
@@ -96,14 +111,16 @@ export function ProjectsFallbackPage() {
           <h2 className="text-2xl font-semibold">Projects</h2>
           <p className="text-sm text-ink/70">Workspace: {activeWorkspace.name}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleCreateProject()}
-          disabled={createProjectLoading}
-          className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
-        >
-          {createProjectLoading ? 'Creating...' : 'Create project'}
-        </button>
+        {canCreateProject ? (
+          <button
+            type="button"
+            onClick={() => void handleCreateProject()}
+            disabled={createProjectLoading}
+            className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
+          >
+            {createProjectLoading ? 'Creating...' : 'Create project'}
+          </button>
+        ) : null}
       </div>
 
       {projectsLoading ? (

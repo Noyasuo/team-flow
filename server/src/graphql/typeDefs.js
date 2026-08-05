@@ -41,6 +41,7 @@ const typeDefs = `#graphql
     id: ID!
     name: String!
     email: String!
+    role: WorkspaceRole!
     title: String
     avatarUrl: String
     isActive: Boolean!

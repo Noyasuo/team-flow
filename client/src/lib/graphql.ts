@@ -31,6 +31,9 @@ export const WORKSPACES = gql`
       id
       name
       description
+      owner {
+        id
+      }
       members {
         role
         user {
@@ -49,6 +52,39 @@ export const CREATE_WORKSPACE = gql`
       id
       name
       description
+    }
+  }
+`;
+
+export const USERS = gql`
+  query Users($page: Int, $limit: Int) {
+    users(page: $page, limit: $limit) {
+      nodes {
+        id
+        name
+        email
+      }
+      pageInfo {
+        page
+        totalPages
+        totalCount
+      }
+    }
+  }
+`;
+
+export const ADD_WORKSPACE_MEMBER = gql`
+  mutation AddWorkspaceMember($input: AddWorkspaceMemberInput!) {
+    addWorkspaceMember(input: $input) {
+      id
+      members {
+        role
+        user {
+          id
+          name
+          email
+        }
+      }
     }
   }
 `;
