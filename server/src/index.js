@@ -1,5 +1,5 @@
 const env = require('./config/env');
-const { connectDatabase } = require('./config/db');
+const { connectDatabase, closeDatabase } = require('./config/db');
 const { createApp } = require('./app');
 
 async function startServer() {
@@ -14,7 +14,13 @@ async function startServer() {
   const shutdown = async (signal) => {
     // eslint-disable-next-line no-console
     console.log(`Received ${signal}. Shutting down TeamFlow API...`);
-    server.close(() => process.exit(0));
+    server.close(async () => {
+      try {
+        await closeDatabase();
+      } finally {
+        process.exit(0);
+      }
+    });
   };
 
   process.on('SIGINT', shutdown);

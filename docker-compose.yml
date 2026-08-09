@@ -1,0 +1,46 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: teamflow-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: teamflow-server
+    restart: unless-stopped
+    env_file:
+      - ./server/.env.docker
+    depends_on:
+      - mongo
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    command: npm run dev
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: teamflow-client
+    restart: unless-stopped
+    environment:
+      VITE_GRAPHQL_URL: http://localhost:4000/graphql
+    depends_on:
+      - server
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  mongo-data:

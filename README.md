@@ -26,6 +26,26 @@ TeamFlow is a full-stack project management SaaS starter built with GraphQL, JWT
 
 ## Quick Start
 
+### Docker (recommended)
+
+Run the full stack with MongoDB, the API, and the Vite frontend:
+
+```bash
+docker compose up --build
+```
+
+Then open:
+
+- Frontend: http://localhost:5173
+- API: http://localhost:4000/graphql
+- MongoDB: mongodb://localhost:27017/teamflow
+
+To stop the stack:
+
+```bash
+docker compose down
+```
+
 ### 1. Install dependencies
 
 ```bash
