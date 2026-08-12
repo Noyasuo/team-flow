@@ -4,7 +4,7 @@ node_modules/
 .pnp.js
 
 # ── Environment / secrets ─────────────────────────────────────────────────────
-.env
+server/.env
 .env.*
 !.env.example
 !.env.docker
