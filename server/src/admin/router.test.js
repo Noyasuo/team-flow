@@ -53,7 +53,7 @@ const models = require('../models');
 const { createAdminRouter } = require('./router');
 
 function basicAuth() {
-  return `Basic ${Buffer.from('admin@teamflow.local:admin12345').toString('base64')}`;
+  return `Basic ${Buffer.from('admin@teamflow.local:replace-with-a-strong-admin-password').toString('base64')}`;
 }
 
 function createUsersQuery(users) {
@@ -73,7 +73,7 @@ describe('admin router user management', () => {
     app = express();
     app.use('/admin', createAdminRouter({
       ADMIN_EMAIL: 'admin@teamflow.local',
-      ADMIN_PASSWORD: 'admin12345',
+      ADMIN_PASSWORD: 'replace-with-a-strong-admin-password',
     }));
   });
 
