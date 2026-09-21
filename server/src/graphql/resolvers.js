@@ -15,6 +15,7 @@ const {
   assertAuthenticated,
   assertWorkspaceAccess,
   assertWorkspaceRole,
+  assertProjectAccess,
 } = require('../utils/authorization');
 const { normalizePagination, buildPageInfo } = require('../utils/pagination');
 const { createActivity, createNotifications } = require('../utils/activity');
@@ -239,7 +240,8 @@ const resolvers = {
       }
 
       await getWorkspaceWithAccess(project.workspace, user._id);
-      return project;
+      if (project.members.length) assertProjectAccess(project, user._id, 'VIEW');
+      return project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
     },
 
     tasks: async (_parent, args, context) => {
@@ -251,6 +253,7 @@ const resolvers = {
       }
 
       await getWorkspaceWithAccess(project.workspace, user._id);
+      if (project.members.length) assertProjectAccess(project, user._id, 'VIEW');
 
       const { page, limit, skip } = normalizePagination(args.page, args.limit);
       const filter = { project: project._id };
@@ -601,6 +604,50 @@ const resolvers = {
 
     addWorkspaceMember: addWorkspaceMemberResolver,
 
+    addProjectMember: async (_parent, args, context) => {
+      const user = assertAuthenticated(context);
+      const project = await Project.findById(parseId(args.input.projectId));
+      if (!project) throw new Error('Project not found');
+      const workspace = await Workspace.findById(project.workspace);
+      assertWorkspaceAccess(workspace, user._id);
+      assertProjectAccess(project, user._id, 'MANAGE');
+      if (!workspace.members.some((member) => String(member.user) === String(args.input.userId))) {
+        throw new Error('Project member must belong to the workspace');
+      }
+      const existing = project.members.find((member) => String(member.user) === String(args.input.userId));
+      if (existing) existing.accessLevel = args.input.accessLevel;
+      else project.members.push({ user: parseId(args.input.userId), accessLevel: args.input.accessLevel });
+      await project.save();
+      return project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+    },
+
+    updateProjectMemberAccess: async (_parent, args, context) => {
+      const user = assertAuthenticated(context);
+      const project = await Project.findById(parseId(args.input.projectId));
+      if (!project) throw new Error('Project not found');
+      const workspace = await Workspace.findById(project.workspace);
+      assertWorkspaceAccess(workspace, user._id);
+      assertProjectAccess(project, user._id, 'MANAGE');
+      const member = project.members.find((entry) => String(entry.user) === String(args.input.userId));
+      if (!member) throw new Error('Project member not found');
+      member.accessLevel = args.input.accessLevel;
+      await project.save();
+      return project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+    },
+
+    removeProjectMember: async (_parent, args, context) => {
+      const user = assertAuthenticated(context);
+      const project = await Project.findById(parseId(args.projectId));
+      if (!project) throw new Error('Project not found');
+      const workspace = await Workspace.findById(project.workspace);
+      assertWorkspaceAccess(workspace, user._id);
+      assertProjectAccess(project, user._id, 'MANAGE');
+      if (String(args.userId) === String(project.createdBy)) throw new Error('Project creator cannot be removed');
+      project.members = project.members.filter((entry) => String(entry.user) !== String(args.userId));
+      await project.save();
+      return project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+    },
+
     createTeam: async (_parent, args, context) => {
       return createWorkspaceResolver(_parent, { input: args.input }, context);
     },
@@ -627,6 +674,7 @@ const resolvers = {
         startDate: args.input.startDate || null,
         dueDate: args.input.dueDate || null,
         createdBy: user._id,
+        members: [],
       });
 
       await createActivity({
@@ -660,6 +708,7 @@ const resolvers = {
       }
 
       assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER', 'MEMBER']);
+      if (project.members.length) assertProjectAccess(project, user._id, 'EDIT');
 
       const task = await Task.create({
         workspace: workspace._id,
@@ -701,6 +750,8 @@ const resolvers = {
       const { task, workspace } = await getTaskWithWorkspace(parseId(args.input.id));
 
       assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER', 'MEMBER']);
+      const taskProject = await Project.findById(task.project);
+      if (taskProject?.members.length) assertProjectAccess(taskProject, user._id, 'EDIT');
 
       const previousAssignee = task.assignee ? String(task.assignee) : null;
       const updates = {

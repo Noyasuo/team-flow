@@ -155,7 +155,7 @@ export const ADMIN_STATS = gql`
 
 export const ADMIN_OPERATIONS = gql`
   query AdminOperations {
-    adminUsers { id username name email title isActive createdAt }
+    adminUsers { id username name email title role isActive createdAt }
     adminWorkspaces { id name description owner { name email } members { user { id } role } createdAt }
     adminProjects { id name status workspace { name } createdBy { name } dueDate createdAt }
     adminTasks { id title status priority project { name } assignee { name } createdAt }
@@ -232,6 +232,29 @@ export const PROJECT = gql`
           role
         }
       }
+      createdBy { id name }
+      members { user { id name email } accessLevel }
+    }
+  }
+`;
+
+export const ADD_PROJECT_MEMBER = gql`
+  mutation AddProjectMember($input: AddProjectMemberInput!) {
+    addProjectMember(input: $input) { id members { user { id name email } accessLevel } }
+  }
+`;
+
+export const UPDATE_PROJECT_MEMBER_ACCESS = gql`
+  mutation UpdateProjectMemberAccess($input: UpdateProjectMemberAccessInput!) {
+    updateProjectMemberAccess(input: $input) { id members { user { id name email } accessLevel } }
+  }
+`;
+
+export const REMOVE_PROJECT_MEMBER = gql`
+  mutation RemoveProjectMember($projectId: ID!, $userId: ID!) {
+    removeProjectMember(projectId: $projectId, userId: $userId) {
+      id
+      members { user { id name email } accessLevel }
     }
   }
 `;

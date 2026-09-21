@@ -30,6 +30,8 @@ const typeDefs = `#graphql
     URGENT
   }
 
+  enum ProjectAccessLevel { VIEW EDIT MANAGE }
+
   enum NotificationKind {
     INFO
     TASK
@@ -89,9 +91,12 @@ const typeDefs = `#graphql
     startDate: DateTime
     dueDate: DateTime
     createdBy: User!
+    members: [ProjectMember!]!
     createdAt: DateTime!
     updatedAt: DateTime!
   }
+
+  type ProjectMember { user: User!, accessLevel: ProjectAccessLevel! }
 
   type Task {
     id: ID!
@@ -257,6 +262,9 @@ const typeDefs = `#graphql
     role: WorkspaceRole!
   }
 
+  input AddProjectMemberInput { projectId: ID!, userId: ID!, accessLevel: ProjectAccessLevel! }
+  input UpdateProjectMemberAccessInput { projectId: ID!, userId: ID!, accessLevel: ProjectAccessLevel! }
+
   input CreateProjectInput {
     workspaceId: ID!
     name: String!
@@ -339,6 +347,9 @@ const typeDefs = `#graphql
 
     createWorkspace(input: CreateWorkspaceInput!): Workspace!
     addWorkspaceMember(input: AddWorkspaceMemberInput!): Workspace!
+    addProjectMember(input: AddProjectMemberInput!): Project!
+    updateProjectMemberAccess(input: UpdateProjectMemberAccessInput!): Project!
+    removeProjectMember(projectId: ID!, userId: ID!): Project!
     createTeam(input: CreateWorkspaceInput!): Team!
     inviteUser(input: AddWorkspaceMemberInput!): Team!
 

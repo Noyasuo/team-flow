@@ -6,6 +6,7 @@ type ProfileDropdownProps = {
     id: string;
     name: string;
     email: string;
+    role?: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
     title?: string;
   } | null;
   onLogout: () => void;
@@ -60,6 +61,13 @@ export function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
               <div>
                 <p className="text-xs uppercase tracking-wide text-ink/50">Title</p>
                 <p className="text-sm font-medium text-ink">{user.title}</p>
+              </div>
+            )}
+
+            {user.role && (
+              <div>
+                <p className="text-xs uppercase tracking-wide text-ink/50">Account Role</p>
+                <p className="text-sm font-medium text-ink">{user.role}</p>
               </div>
             )}
             
