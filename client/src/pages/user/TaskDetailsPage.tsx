@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@apollo/client/react';
 import dayjs from 'dayjs';
+import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ADD_COMMENT, TASK, UPDATE_TASK } from '../../lib/graphql';
@@ -120,7 +121,11 @@ export function TaskDetailsPage() {
   return (
     <section className="space-y-6">
       <header className="space-y-2">
-        <Link to={`/projects/${task.project.id}`} className="text-sm text-aqua hover:underline">
+        <Link
+          to={`/projects/${task.project.id}`}
+          className="inline-flex items-center gap-2 rounded-xl border border-ink/10 px-3 py-2 text-sm text-ink hover:bg-ink hover:text-mist"
+        >
+          <ArrowLeft size={15} />
           Back to {task.project.name}
         </Link>
         <h2 className="text-3xl font-semibold">{task.title}</h2>

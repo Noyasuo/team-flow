@@ -155,7 +155,7 @@ export const ADMIN_STATS = gql`
 
 export const ADMIN_OPERATIONS = gql`
   query AdminOperations {
-    adminUsers { id username name email role isActive createdAt }
+    adminUsers { id username name email title isActive createdAt }
     adminWorkspaces { id name description owner { name email } members { user { id } role } createdAt }
     adminProjects { id name status workspace { name } createdBy { name } dueDate createdAt }
     adminTasks { id title status priority project { name } assignee { name } createdAt }
@@ -226,6 +226,11 @@ export const PROJECT = gql`
       workspace {
         id
         name
+        owner { id }
+        members {
+          user { id }
+          role
+        }
       }
     }
   }

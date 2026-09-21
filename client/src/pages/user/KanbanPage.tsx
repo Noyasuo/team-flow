@@ -1,8 +1,10 @@
 import { useMutation, useQuery } from '@apollo/client/react';
 import dayjs from 'dayjs';
+import { ArrowLeft } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { CREATE_TASK, PROJECT, TASKS, UPDATE_TASK } from '../../lib/graphql';
+import { useAuth } from '../../context/AuthContext';
 
 type TaskNode = {
   id: string;
@@ -36,6 +38,8 @@ type ProjectResult = {
     workspace: {
       id: string;
       name: string;
+      owner: { id: string };
+      members: Array<{ user: { id: string }; role: string }>;
     };
   } | null;
 };
@@ -45,6 +49,7 @@ const columns: Array<TaskNode['status']> = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DO
 export function KanbanPage() {
   const navigate = useNavigate();
   const { projectId } = useParams();
+  const { user } = useAuth();
   const [search, setSearch] = useState('');
 
   const { data: projectData, loading: projectLoading } = useQuery<ProjectResult>(PROJECT, {
@@ -86,6 +91,9 @@ export function KanbanPage() {
 
   const selectedProject = projectData?.project ?? null;
   const workspaceId = selectedProject?.workspace.id ?? null;
+  const currentProjectRole = selectedProject?.workspace.owner.id === user?.id
+    ? 'ADMIN'
+    : selectedProject?.workspace.members.find((member) => member.user.id === user?.id)?.role ?? null;
 
   async function handleCreateTask() {
     const title = window.prompt('Task title');
@@ -138,9 +146,21 @@ export function KanbanPage() {
           {selectedProject?.workspace?.name ? (
             <p className="text-sm text-ink/60">Workspace: {selectedProject.workspace.name}</p>
           ) : null}
+          {currentProjectRole ? (
+            <p className="mt-2 inline-flex rounded-full bg-aqua/10 px-3 py-1 text-xs font-medium text-aqua">
+              Project role: {currentProjectRole}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
+          <Link
+            to="/projects"
+            className="inline-flex items-center gap-2 rounded-xl border border-ink/10 px-3 py-2 text-sm hover:bg-ink hover:text-mist"
+          >
+            <ArrowLeft size={15} />
+            Back to projects
+          </Link>
           <input
             placeholder="Search tasks..."
             value={search}
