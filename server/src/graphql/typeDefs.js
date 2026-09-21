@@ -225,6 +225,15 @@ const typeDefs = `#graphql
     password: String!
   }
 
+  input CreateAdminUserInput {
+    username: String!
+    name: String!
+    email: String!
+    password: String!
+    title: String
+    role: WorkspaceRole = MEMBER
+  }
+
   input CreateWorkspaceInput {
     name: String!
     description: String
@@ -298,12 +307,19 @@ const typeDefs = `#graphql
     notifications(unreadOnly: Boolean = false, page: Int = 1, limit: Int = 20): NotificationConnection!
     dashboard(workspaceId: ID!): DashboardStats!
     adminStats: AdminStats!
+    adminUsers: [User!]!
+    adminWorkspaces: [Workspace!]!
+    adminProjects: [Project!]!
+    adminTasks: [Task!]!
   }
 
   type Mutation {
     signup(input: RegisterInput!): AuthPayload!
     register(input: RegisterInput!): AuthPayload!
     login(input: LoginInput!): AuthPayload!
+    createAdminUser(input: CreateAdminUserInput!): User!
+    setUserActive(userId: ID!, isActive: Boolean!): User!
+    setAdminTaskStatus(taskId: ID!, status: TaskStatus!): Task!
 
     createWorkspace(input: CreateWorkspaceInput!): Workspace!
     addWorkspaceMember(input: AddWorkspaceMemberInput!): Workspace!

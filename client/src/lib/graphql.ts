@@ -143,6 +143,33 @@ export const ADMIN_STATS = gql`
   }
 `;
 
+export const ADMIN_OPERATIONS = gql`
+  query AdminOperations {
+    adminUsers { id username name email role isActive createdAt }
+    adminWorkspaces { id name description owner { name email } members { user { id } role } createdAt }
+    adminProjects { id name status workspace { name } createdBy { name } dueDate createdAt }
+    adminTasks { id title status priority project { name } assignee { name } createdAt }
+  }
+`;
+
+export const CREATE_ADMIN_USER = gql`
+  mutation CreateAdminUser($input: CreateAdminUserInput!) {
+    createAdminUser(input: $input) { id username name email role isActive createdAt }
+  }
+`;
+
+export const SET_USER_ACTIVE = gql`
+  mutation SetUserActive($userId: ID!, $isActive: Boolean!) {
+    setUserActive(userId: $userId, isActive: $isActive) { id isActive }
+  }
+`;
+
+export const SET_ADMIN_TASK_STATUS = gql`
+  mutation SetAdminTaskStatus($taskId: ID!, $status: TaskStatus!) {
+    setAdminTaskStatus(taskId: $taskId, status: $status) { id status }
+  }
+`;
+
 export const PROJECTS = gql`
   query Projects($workspaceId: ID!, $page: Int, $limit: Int) {
     projects(workspaceId: $workspaceId, page: $page, limit: $limit) {

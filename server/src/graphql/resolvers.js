@@ -45,6 +45,14 @@ function parseOptionalId(id) {
   return parseId(id);
 }
 
+function assertAdmin(context) {
+  const user = assertAuthenticated(context);
+  if (user.role !== 'ADMIN') {
+    throw new Error('Admin access required');
+  }
+  return user;
+}
+
 async function getWorkspaceWithAccess(workspaceId, userId) {
   const workspace = await Workspace.findById(workspaceId);
 
@@ -372,10 +380,7 @@ const resolvers = {
     },
 
     adminStats: async (_parent, _args, context) => {
-      const user = assertAuthenticated(context);
-      if (user.role !== 'ADMIN') {
-        throw new Error('Admin access required');
-      }
+      assertAdmin(context);
 
       const [totalUsers, activeUsers, totalWorkspaces, totalProjects, totalTasks, openTasks, completedTasks] =
         await Promise.all([
@@ -397,6 +402,32 @@ const resolvers = {
         openTasks,
         completedTasks,
       };
+    },
+
+    adminUsers: async (_parent, _args, context) => {
+      assertAdmin(context);
+      return User.find({}).sort({ createdAt: -1 }).limit(200);
+    },
+
+    adminWorkspaces: async (_parent, _args, context) => {
+      assertAdmin(context);
+      return Workspace.find({}).populate('owner').sort({ createdAt: -1 }).limit(200);
+    },
+
+    adminProjects: async (_parent, _args, context) => {
+      assertAdmin(context);
+      return Project.find({}).populate('workspace').populate('createdBy').sort({ createdAt: -1 }).limit(200);
+    },
+
+    adminTasks: async (_parent, _args, context) => {
+      assertAdmin(context);
+      return Task.find({})
+        .populate('workspace')
+        .populate('project')
+        .populate('assignee')
+        .populate('createdBy')
+        .sort({ createdAt: -1 })
+        .limit(300);
     },
   },
 
@@ -429,6 +460,50 @@ const resolvers = {
       user.password = undefined;
 
       return { token, user };
+    },
+
+    createAdminUser: async (_parent, args, context) => {
+      assertAdmin(context);
+      const input = args.input;
+      const existing = await User.findOne({
+        $or: [{ username: input.username.toLowerCase().trim() }, { email: input.email.toLowerCase().trim() }],
+      });
+      if (existing) {
+        throw new Error('Username or email is already in use');
+      }
+
+      return User.create({
+        username: input.username,
+        name: input.name,
+        email: input.email,
+        password: input.password,
+        title: input.title || '',
+        role: input.role || 'MEMBER',
+        isActive: true,
+      });
+    },
+
+    setUserActive: async (_parent, args, context) => {
+      assertAdmin(context);
+      const targetUser = await User.findById(parseId(args.userId));
+      if (!targetUser) {
+        throw new Error('User not found');
+      }
+      targetUser.isActive = args.isActive;
+      return targetUser.save();
+    },
+
+    setAdminTaskStatus: async (_parent, args, context) => {
+      assertAdmin(context);
+      const task = await Task.findByIdAndUpdate(parseId(args.taskId), { status: args.status }, { new: true })
+        .populate('workspace')
+        .populate('project')
+        .populate('assignee')
+        .populate('createdBy');
+      if (!task) {
+        throw new Error('Task not found');
+      }
+      return task;
     },
 
     createWorkspace: createWorkspaceResolver,
