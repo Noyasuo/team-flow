@@ -15,6 +15,7 @@ type AuthResponse = {
     title?: string;
     role?: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
   };
+  requiresPasswordChange: boolean;
 };
 
 type LoginMutationResult = { login: AuthResponse };
@@ -135,10 +136,11 @@ export function AuthPage() {
         throw new Error('Login failed');
       }
 
-      setSession(result.data.login.token, result.data.login.user);
-      const destination =
-        (location.state as { from?: string } | null)?.from ??
-        (result.data.login.user.role === 'ADMIN' ? '/admin' : '/');
+      setSession(result.data.login.token, result.data.login.user, result.data.login.requiresPasswordChange);
+      const destination = result.data.login.requiresPasswordChange
+        ? '/change-password'
+        : (location.state as { from?: string } | null)?.from ??
+          (result.data.login.user.role === 'ADMIN' ? '/admin' : '/');
       navigate(destination);
     } catch (error) {
       setFeedback(toFriendlyAuthMessage(error));
@@ -160,6 +162,9 @@ export function AuthPage() {
             <input
               type="text"
               required
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={formState.username}
               onChange={(event) =>
                 setFormState((current) => ({ ...current, username: event.target.value }))

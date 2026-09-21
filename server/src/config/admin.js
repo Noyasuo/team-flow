@@ -2,7 +2,7 @@ const { User } = require('../models');
 
 async function ensureAdminUser(env) {
   const email = env.ADMIN_EMAIL.toLowerCase();
-  const username = env.ADMIN_USERNAME.toLowerCase();
+  const username = env.ADMIN_USERNAME.trim();
   const existingUser = await User.findOne({ email }).select('+password');
 
   if (!existingUser) {

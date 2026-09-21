@@ -440,7 +440,7 @@ const resolvers = {
 
     login: async (_parent, args, context) => {
       const input = loginSchema.parse(args.input);
-      const normalizedUsername = input.username.toLowerCase().trim();
+      const normalizedUsername = input.username.trim();
 
       const user = await User.findOne({ username: normalizedUsername }).select('+password');
       if (!user) {
@@ -459,21 +459,36 @@ const resolvers = {
       );
       user.password = undefined;
 
-      return { token, user };
+      return { token, user, requiresPasswordChange: input.password === '12345678' };
+    },
+
+    changeMyPassword: async (_parent, args, context) => {
+      const user = assertAuthenticated(context);
+      if (args.newPassword.length < 8) {
+        throw new Error('Password must be at least 8 characters');
+      }
+
+      const targetUser = await User.findById(user._id).select('+password');
+      if (!targetUser || !(await targetUser.comparePassword(args.currentPassword))) {
+        throw new Error('Current password is incorrect');
+      }
+
+      targetUser.password = args.newPassword;
+      return targetUser.save();
     },
 
     createAdminUser: async (_parent, args, context) => {
       assertAdmin(context);
       const input = args.input;
       const existing = await User.findOne({
-        $or: [{ username: input.username.toLowerCase().trim() }, { email: input.email.toLowerCase().trim() }],
+        $or: [{ username: input.username.trim() }, { email: input.email.toLowerCase().trim() }],
       });
       if (existing) {
         throw new Error('Username or email is already in use');
       }
 
       return User.create({
-        username: input.username,
+        username: input.username.trim(),
         name: input.name,
         email: input.email,
         password: input.password,
@@ -481,6 +496,82 @@ const resolvers = {
         role: input.role || 'MEMBER',
         isActive: true,
       });
+    },
+
+    updateAdminUser: async (_parent, args, context) => {
+      const currentAdmin = assertAdmin(context);
+      const input = args.input;
+      const targetUser = await User.findById(parseId(input.id)).select('+password');
+
+      if (!targetUser) {
+        throw new Error('User not found');
+      }
+
+      const nextUsername = input.username === undefined ? targetUser.username : input.username.trim();
+      const nextEmail = input.email === undefined ? targetUser.email : input.email.trim().toLowerCase();
+      const nextName = input.name === undefined ? targetUser.name : input.name.trim();
+      const nextTitle = input.title === undefined ? targetUser.title : input.title.trim();
+
+      if (nextName.length < 2 || nextName.length > 80) {
+        throw new Error('Name must be between 2 and 80 characters');
+      }
+      if (!nextUsername || nextUsername.length < 3) {
+        throw new Error('Username must be at least 3 characters');
+      }
+      if (!z.email().safeParse(nextEmail).success) {
+        throw new Error('Please provide a valid email address');
+      }
+      if (nextTitle.length > 100) {
+        throw new Error('Title must be 100 characters or fewer');
+      }
+      if (input.password !== undefined && input.password.length < 8) {
+        throw new Error('Password must be at least 8 characters');
+      }
+
+      const duplicate = await User.findOne({
+        _id: { $ne: targetUser._id },
+        $or: [{ username: nextUsername }, { email: nextEmail }],
+      });
+      if (duplicate) {
+        throw new Error('Username or email is already in use');
+      }
+
+      if (String(targetUser._id) === String(currentAdmin._id) && input.isActive === false) {
+        throw new Error('You cannot disable your own admin account');
+      }
+
+      targetUser.username = nextUsername;
+      targetUser.name = nextName;
+      targetUser.email = nextEmail;
+      targetUser.title = nextTitle;
+      if (input.password !== undefined && input.password.length > 0) targetUser.password = input.password;
+      if (input.role !== undefined) targetUser.role = input.role;
+      if (input.isActive !== undefined) targetUser.isActive = input.isActive;
+
+      return targetUser.save();
+    },
+
+    resetAdminUserPassword: async (_parent, args, context) => {
+      assertAdmin(context);
+      const targetUser = await User.findById(parseId(args.userId)).select('+password');
+      if (!targetUser) {
+        throw new Error('User not found');
+      }
+      targetUser.password = '12345678';
+      return targetUser.save();
+    },
+
+    changeAdminUserPassword: async (_parent, args, context) => {
+      assertAdmin(context);
+      if (args.password.length < 8) {
+        throw new Error('Password must be at least 8 characters');
+      }
+      const targetUser = await User.findById(parseId(args.userId)).select('+password');
+      if (!targetUser) {
+        throw new Error('User not found');
+      }
+      targetUser.password = args.password;
+      return targetUser.save();
     },
 
     setUserActive: async (_parent, args, context) => {

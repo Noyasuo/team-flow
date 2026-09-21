@@ -6,13 +6,13 @@ type ProfileDropdownProps = {
     id: string;
     name: string;
     email: string;
+    role?: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
     title?: string;
   } | null;
-  workspaceRole?: string;
   onLogout: () => void;
 };
 
-export function ProfileDropdown({ user, workspaceRole, onLogout }: ProfileDropdownProps) {
+export function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -64,17 +64,17 @@ export function ProfileDropdown({ user, workspaceRole, onLogout }: ProfileDropdo
               </div>
             )}
             
-            {workspaceRole && (
+            {user.role && (
               <div>
-                <p className="text-xs uppercase tracking-wide text-ink/50">Workspace Role</p>
+                <p className="text-xs uppercase tracking-wide text-ink/50">Account Role</p>
                 <div className="flex items-center gap-2">
                   <span className={`inline-block w-2 h-2 rounded-full ${
-                    workspaceRole === 'ADMIN' ? 'bg-red-500' :
-                    workspaceRole === 'MANAGER' ? 'bg-amber-500' :
-                    workspaceRole === 'MEMBER' ? 'bg-blue-500' :
+                    user.role === 'ADMIN' ? 'bg-red-500' :
+                    user.role === 'MANAGER' ? 'bg-amber-500' :
+                    user.role === 'MEMBER' ? 'bg-blue-500' :
                     'bg-gray-500'
                   }`} />
-                  <p className="text-sm font-medium text-ink">{workspaceRole}</p>
+                  <p className="text-sm font-medium text-ink">{user.role}</p>
                 </div>
               </div>
             )}

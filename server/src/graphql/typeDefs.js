@@ -148,6 +148,7 @@ const typeDefs = `#graphql
   type AuthPayload {
     token: String!
     user: User!
+    requiresPasswordChange: Boolean!
   }
 
   type PageInfo {
@@ -234,6 +235,17 @@ const typeDefs = `#graphql
     role: WorkspaceRole = MEMBER
   }
 
+  input UpdateAdminUserInput {
+    id: ID!
+    username: String
+    name: String
+    email: String
+    title: String
+    password: String
+    role: WorkspaceRole
+    isActive: Boolean
+  }
+
   input CreateWorkspaceInput {
     name: String!
     description: String
@@ -317,7 +329,11 @@ const typeDefs = `#graphql
     signup(input: RegisterInput!): AuthPayload!
     register(input: RegisterInput!): AuthPayload!
     login(input: LoginInput!): AuthPayload!
+    changeMyPassword(currentPassword: String!, newPassword: String!): User!
     createAdminUser(input: CreateAdminUserInput!): User!
+    updateAdminUser(input: UpdateAdminUserInput!): User!
+    resetAdminUserPassword(userId: ID!): User!
+    changeAdminUserPassword(userId: ID!, password: String!): User!
     setUserActive(userId: ID!, isActive: Boolean!): User!
     setAdminTaskStatus(taskId: ID!, status: TaskStatus!): Task!
 

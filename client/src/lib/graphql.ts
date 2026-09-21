@@ -12,6 +12,16 @@ export const LOGIN = gql`
         title
         role
       }
+      requiresPasswordChange
+    }
+  }
+`;
+
+export const CHANGE_MY_PASSWORD = gql`
+  mutation ChangeMyPassword($currentPassword: String!, $newPassword: String!) {
+    changeMyPassword(currentPassword: $currentPassword, newPassword: $newPassword) {
+      id
+      username
     }
   }
 `;
@@ -155,6 +165,24 @@ export const ADMIN_OPERATIONS = gql`
 export const CREATE_ADMIN_USER = gql`
   mutation CreateAdminUser($input: CreateAdminUserInput!) {
     createAdminUser(input: $input) { id username name email role isActive createdAt }
+  }
+`;
+
+export const UPDATE_ADMIN_USER = gql`
+  mutation UpdateAdminUser($input: UpdateAdminUserInput!) {
+    updateAdminUser(input: $input) { id username name email title role isActive }
+  }
+`;
+
+export const RESET_ADMIN_USER_PASSWORD = gql`
+  mutation ResetAdminUserPassword($userId: ID!) {
+    resetAdminUserPassword(userId: $userId) { id }
+  }
+`;
+
+export const CHANGE_ADMIN_USER_PASSWORD = gql`
+  mutation ChangeAdminUserPassword($userId: ID!, $password: String!) {
+    changeAdminUserPassword(userId: $userId, password: $password) { id }
   }
 `;
 

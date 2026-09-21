@@ -9,6 +9,7 @@ import {
 
 const TOKEN_KEY = 'teamflow_token';
 const USER_KEY = 'teamflow_user';
+const PASSWORD_CHANGE_KEY = 'teamflow_requires_password_change';
 
 type SessionUser = {
   id: string;
@@ -24,7 +25,9 @@ type AuthContextValue = {
   user: SessionUser | null;
   isAuthenticated: boolean;
   isAuthReady: boolean;
-  setSession: (token: string, user: SessionUser) => void;
+  requiresPasswordChange: boolean;
+  setSession: (token: string, user: SessionUser, requiresPasswordChange?: boolean) => void;
+  completePasswordChange: () => void;
   logout: () => void;
 };
 
@@ -68,10 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem(TOKEN_KEY);
     const storedUser = readStoredUser();
+    const storedPasswordChange = window.localStorage.getItem(PASSWORD_CHANGE_KEY) === 'true';
 
     setToken(storedToken);
     setUser(
@@ -79,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ? { ...storedUser, role: decodeRoleFromToken(storedToken) ?? 'MEMBER' }
         : storedUser
     );
+    setRequiresPasswordChange(storedPasswordChange);
     setIsAuthReady(true);
   }, []);
 
@@ -88,22 +94,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAuthenticated: Boolean(token),
       isAuthReady,
-      setSession: (nextToken: string, nextUser: SessionUser) => {
+      requiresPasswordChange,
+      setSession: (nextToken: string, nextUser: SessionUser, nextRequiresPasswordChange = false) => {
         const nextRole = nextUser.role ?? decodeRoleFromToken(nextToken) ?? 'MEMBER';
         const sessionUser = { ...nextUser, role: nextRole };
         window.localStorage.setItem(TOKEN_KEY, nextToken);
         window.localStorage.setItem(USER_KEY, JSON.stringify(sessionUser));
+        window.localStorage.setItem(PASSWORD_CHANGE_KEY, String(nextRequiresPasswordChange));
         setToken(nextToken);
         setUser(sessionUser);
+        setRequiresPasswordChange(nextRequiresPasswordChange);
+      },
+      completePasswordChange: () => {
+        window.localStorage.removeItem(PASSWORD_CHANGE_KEY);
+        setRequiresPasswordChange(false);
       },
       logout: () => {
         window.localStorage.removeItem(TOKEN_KEY);
         window.localStorage.removeItem(USER_KEY);
+        window.localStorage.removeItem(PASSWORD_CHANGE_KEY);
         setToken(null);
         setUser(null);
       },
     }),
-    [isAuthReady, token, user]
+    [isAuthReady, requiresPasswordChange, token, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

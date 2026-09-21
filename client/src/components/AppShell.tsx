@@ -6,7 +6,6 @@ import { useAuth } from '../context/AuthContext';
 import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { WORKSPACES } from '../lib/graphql';
 import { ProfileDropdown } from './ProfileDropdown';
-import { WORKSPACE } from '../lib/graphql';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -22,17 +21,6 @@ type WorkspacesResult = {
   workspaces: Workspace[];
 };
 
-  type WorkspaceResult = {
-    workspace: {
-      id: string;
-      name: string;
-      members: Array<{
-        user: { id: string };
-        role: string;
-      }>;
-    };
-  };
-
 export function AppShell() {
   const { user, logout } = useAuth();
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext();
@@ -47,14 +35,6 @@ export function AppShell() {
       setSelectedWorkspaceId(activeWorkspace.id);
     }
   }, [activeWorkspace, selectedWorkspaceId, setSelectedWorkspaceId]);
-
-    // Query current workspace to get user's role
-    const { data: workspaceData } = useQuery<WorkspaceResult>(WORKSPACE, {
-      variables: { id: activeWorkspace?.id ?? '' },
-      skip: !activeWorkspace,
-    });
-
-    const userRole = workspaceData?.workspace?.members?.find(m => m.user.id === user?.id)?.role;
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#f4f3e6,#d9ecf0_45%,#eef4f8)] text-ink">
@@ -135,7 +115,7 @@ export function AppShell() {
               >
                 <Bell size={14} /> Alerts
               </Link>
-                <ProfileDropdown user={user} workspaceRole={userRole} onLogout={logout} />
+                <ProfileDropdown user={user} onLogout={logout} />
             </div>
           </header>
 
