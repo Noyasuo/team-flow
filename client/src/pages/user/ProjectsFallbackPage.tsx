@@ -2,9 +2,9 @@ import { useMutation, useQuery } from '@apollo/client/react';
 import React from 'react';
 import dayjs from 'dayjs';
 import { Link } from 'react-router-dom';
-import { CREATE_PROJECT, PROJECTS, WORKSPACES } from '../lib/graphql';
-import { useWorkspaceContext } from '../context/WorkspaceContext';
-import { useAuth } from '../context/AuthContext';
+import { CREATE_PROJECT, PROJECTS, WORKSPACES } from '../../lib/graphql';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useAuth } from '../../context/AuthContext';
 
 type WorkspaceResult = {
   workspaces: Array<{

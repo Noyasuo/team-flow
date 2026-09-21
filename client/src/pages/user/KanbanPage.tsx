@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@apollo/client/react';
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { CREATE_TASK, PROJECT, TASKS, UPDATE_TASK } from '../lib/graphql';
+import { CREATE_TASK, PROJECT, TASKS, UPDATE_TASK } from '../../lib/graphql';
 
 type TaskNode = {
   id: string;

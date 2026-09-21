@@ -40,6 +40,7 @@ const typeDefs = `#graphql
   type User {
     id: ID!
     name: String!
+    username: String
     email: String!
     role: WorkspaceRole!
     title: String
@@ -202,6 +203,16 @@ const typeDefs = `#graphql
     completedTasksThisWeek: Int!
   }
 
+  type AdminStats {
+    totalUsers: Int!
+    activeUsers: Int!
+    totalWorkspaces: Int!
+    totalProjects: Int!
+    totalTasks: Int!
+    openTasks: Int!
+    completedTasks: Int!
+  }
+
   input RegisterInput {
     name: String!
     email: String!
@@ -210,7 +221,7 @@ const typeDefs = `#graphql
   }
 
   input LoginInput {
-    email: String!
+    username: String!
     password: String!
   }
 
@@ -286,6 +297,7 @@ const typeDefs = `#graphql
     activityFeed(workspaceId: ID!, page: Int = 1, limit: Int = 20): ActivityConnection!
     notifications(unreadOnly: Boolean = false, page: Int = 1, limit: Int = 20): NotificationConnection!
     dashboard(workspaceId: ID!): DashboardStats!
+    adminStats: AdminStats!
   }
 
   type Mutation {

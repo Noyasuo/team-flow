@@ -7,8 +7,10 @@ export const LOGIN = gql`
       user {
         id
         name
+        username
         email
         title
+        role
       }
     }
   }
@@ -19,6 +21,7 @@ export const ME = gql`
     me {
       id
       name
+      username
       email
       title
     }
@@ -122,6 +125,20 @@ export const DASHBOARD = gql`
         key
         count
       }
+    }
+  }
+`;
+
+export const ADMIN_STATS = gql`
+  query AdminStats {
+    adminStats {
+      totalUsers
+      activeUsers
+      totalWorkspaces
+      totalProjects
+      totalTasks
+      openTasks
+      completedTasks
     }
   }
 `;

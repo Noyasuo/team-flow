@@ -10,9 +10,9 @@ import {
   PROJECTS,
   USERS,
   WORKSPACES,
-} from '../lib/graphql';
-import { useWorkspaceContext } from '../context/WorkspaceContext';
-import { useAuth } from '../context/AuthContext';
+} from '../../lib/graphql';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useAuth } from '../../context/AuthContext';
 
 type Workspace = {
   id: string;

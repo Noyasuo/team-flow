@@ -13,6 +13,7 @@ const USER_KEY = 'teamflow_user';
 type SessionUser = {
   id: string;
   name: string;
+  username?: string;
   email: string;
   role?: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
   title?: string;
@@ -22,6 +23,7 @@ type AuthContextValue = {
   token: string | null;
   user: SessionUser | null;
   isAuthenticated: boolean;
+  isAuthReady: boolean;
   setSession: (token: string, user: SessionUser) => void;
   logout: () => void;
 };
@@ -65,6 +67,7 @@ function decodeRoleFromToken(token: string): SessionUser['role'] | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem(TOKEN_KEY);
@@ -76,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ? { ...storedUser, role: decodeRoleFromToken(storedToken) ?? 'MEMBER' }
         : storedUser
     );
+    setIsAuthReady(true);
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -83,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token,
       user,
       isAuthenticated: Boolean(token),
+      isAuthReady,
       setSession: (nextToken: string, nextUser: SessionUser) => {
         const nextRole = nextUser.role ?? decodeRoleFromToken(nextToken) ?? 'MEMBER';
         const sessionUser = { ...nextUser, role: nextRole };
@@ -98,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
       },
     }),
-    [token, user]
+    [isAuthReady, token, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

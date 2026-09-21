@@ -2,14 +2,15 @@ import { useMutation } from '@apollo/client/react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { LOGIN } from '../lib/graphql';
+import { useAuth } from '../../context/AuthContext';
+import { LOGIN } from '../../lib/graphql';
 
 type AuthResponse = {
   token: string;
   user: {
     id: string;
     name: string;
+    username: string;
     email: string;
     title?: string;
   };
@@ -18,7 +19,7 @@ type AuthResponse = {
 type LoginMutationResult = { login: AuthResponse };
 
 function toFriendlyAuthMessage(error: unknown): string {
-  const fallback = 'Unable to sign in. Please check your email and password.';
+  const fallback = 'Unable to sign in. Please check your username and password.';
 
   const rawMessage =
     typeof error === 'object' && error !== null && 'message' in error
@@ -75,8 +76,8 @@ function toFriendlyAuthMessage(error: unknown): string {
         return 'Password format is invalid.';
       }
 
-      if (field === 'email') {
-        return 'Please enter a valid email address.';
+      if (field === 'username') {
+        return 'Please enter a valid username.';
       }
 
       if (typeof first.message === 'string' && first.message.trim()) {
@@ -88,11 +89,11 @@ function toFriendlyAuthMessage(error: unknown): string {
   }
 
   if (candidate.includes('Invalid credentials')) {
-    return 'Invalid email or password.';
+    return 'Invalid username or password.';
   }
 
-  if (candidate.toLowerCase().includes('email')) {
-    return 'Please use a valid email address.';
+  if (candidate.toLowerCase().includes('username')) {
+    return 'Please use a valid username.';
   }
 
   return candidate.length <= 160 ? candidate : fallback;
@@ -103,7 +104,7 @@ export function AuthPage() {
   const location = useLocation();
   const { isAuthenticated, setSession } = useAuth();
   const [formState, setFormState] = useState({
-    email: '',
+    username: '',
     password: '',
   });
   const [feedback, setFeedback] = useState<string>('');
@@ -123,7 +124,7 @@ export function AuthPage() {
       const result = await login({
         variables: {
           input: {
-            email: formState.email,
+            username: formState.username,
             password: formState.password,
           },
         },
@@ -152,13 +153,13 @@ export function AuthPage() {
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <label className="block">
-            <span className="mb-1 block text-sm font-medium">Email</span>
+            <span className="mb-1 block text-sm font-medium">Username</span>
             <input
-              type="email"
+              type="text"
               required
-              value={formState.email}
+              value={formState.username}
               onChange={(event) =>
-                setFormState((current) => ({ ...current, email: event.target.value }))
+                setFormState((current) => ({ ...current, username: event.target.value }))
               }
               className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm outline-none focus:border-aqua"
             />

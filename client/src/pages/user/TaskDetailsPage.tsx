@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@apollo/client/react';
 import dayjs from 'dayjs';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ADD_COMMENT, TASK, UPDATE_TASK } from '../lib/graphql';
+import { ADD_COMMENT, TASK, UPDATE_TASK } from '../../lib/graphql';
 
 type TaskResult = {
   task: {

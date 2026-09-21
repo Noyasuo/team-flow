@@ -1,9 +1,11 @@
 const env = require('./config/env');
 const { connectDatabase, closeDatabase } = require('./config/db');
+const { ensureAdminUser } = require('./config/admin');
 const { createApp } = require('./app');
 
 async function startServer() {
   await connectDatabase(env.MONGODB_URI);
+  await ensureAdminUser(env);
   const app = await createApp(env);
 
   const server = app.listen(env.PORT, () => {

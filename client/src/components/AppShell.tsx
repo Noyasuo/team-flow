@@ -105,6 +105,19 @@ export function AppShell() {
                 {label}
               </NavLink>
             ))}
+            {user?.role === 'ADMIN' ? (
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  `flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${
+                    isActive ? 'bg-ink text-mist' : 'text-ink/80 hover:bg-white hover:text-ink'
+                  }`
+                }
+              >
+                <UserCircle2 size={16} />
+                Admin dashboard
+              </NavLink>
+            ) : null}
           </nav>
         </aside>
 

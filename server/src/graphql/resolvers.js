@@ -27,7 +27,7 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  email: z.email(),
+  username: z.string().min(3),
   password: z.string().min(1),
 });
 
@@ -370,6 +370,34 @@ const resolvers = {
         completedTasksThisWeek,
       };
     },
+
+    adminStats: async (_parent, _args, context) => {
+      const user = assertAuthenticated(context);
+      if (user.role !== 'ADMIN') {
+        throw new Error('Admin access required');
+      }
+
+      const [totalUsers, activeUsers, totalWorkspaces, totalProjects, totalTasks, openTasks, completedTasks] =
+        await Promise.all([
+          User.countDocuments({}),
+          User.countDocuments({ isActive: true }),
+          Workspace.countDocuments({}),
+          Project.countDocuments({}),
+          Task.countDocuments({}),
+          Task.countDocuments({ status: { $in: ['TODO', 'IN_PROGRESS', 'REVIEW'] } }),
+          Task.countDocuments({ status: 'DONE' }),
+        ]);
+
+      return {
+        totalUsers,
+        activeUsers,
+        totalWorkspaces,
+        totalProjects,
+        totalTasks,
+        openTasks,
+        completedTasks,
+      };
+    },
   },
 
   Mutation: {
@@ -381,9 +409,9 @@ const resolvers = {
 
     login: async (_parent, args, context) => {
       const input = loginSchema.parse(args.input);
-      const normalizedEmail = input.email.toLowerCase();
+      const normalizedUsername = input.username.toLowerCase().trim();
 
-      const user = await User.findOne({ email: normalizedEmail }).select('+password');
+      const user = await User.findOne({ username: normalizedUsername }).select('+password');
       if (!user) {
         throw new Error('Invalid credentials');
       }

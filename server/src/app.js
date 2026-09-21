@@ -9,7 +9,6 @@ const { typeDefs } = require('./graphql/typeDefs');
 const { resolvers } = require('./graphql/resolvers');
 const { User } = require('./models');
 const { readBearerToken, verifyAuthToken } = require('./utils/auth');
-const { createAdminRouter } = require('./admin/router');
 
 async function createApp(env) {
   const app = express();
@@ -22,8 +21,6 @@ async function createApp(env) {
   app.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok', service: 'teamflow-api' });
   });
-
-  app.use('/admin', createAdminRouter(env));
 
   const apolloServer = new ApolloServer({
     typeDefs,
