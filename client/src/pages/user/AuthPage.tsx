@@ -13,6 +13,7 @@ type AuthResponse = {
     username: string;
     email: string;
     title?: string;
+    role?: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
   };
 };
 
@@ -135,7 +136,9 @@ export function AuthPage() {
       }
 
       setSession(result.data.login.token, result.data.login.user);
-      const destination = (location.state as { from?: string } | null)?.from ?? '/';
+      const destination =
+        (location.state as { from?: string } | null)?.from ??
+        (result.data.login.user.role === 'ADMIN' ? '/admin' : '/');
       navigate(destination);
     } catch (error) {
       setFeedback(toFriendlyAuthMessage(error));
