@@ -667,7 +667,11 @@ const resolvers = {
       if (!project) throw new Error('Project not found');
       const workspace = await Workspace.findById(project.workspace);
       assertWorkspaceAccess(workspace, user._id);
-      assertProjectAccess(project, user._id, 'MANAGE');
+      const workspaceRole = getWorkspaceRole(workspace, user._id);
+      const canManageProjectMembership = ['ADMIN', 'MANAGER'].includes(workspaceRole) || getProjectAccessLevel(project, user._id) === 'EDIT' || String(project.createdBy) === String(user._id);
+      if (!canManageProjectMembership) {
+        throw new Error('EDIT project access required');
+      }
       if (!workspace.members.some((member) => String(member.user) === String(args.input.userId))) {
         throw new Error('Project member must belong to the workspace');
       }
@@ -686,7 +690,11 @@ const resolvers = {
       if (!project) throw new Error('Project not found');
       const workspace = await Workspace.findById(project.workspace);
       assertWorkspaceAccess(workspace, user._id);
-      assertProjectAccess(project, user._id, 'MANAGE');
+      const workspaceRole = getWorkspaceRole(workspace, user._id);
+      const canManageProjectMembership = ['ADMIN', 'MANAGER'].includes(workspaceRole) || getProjectAccessLevel(project, user._id) === 'EDIT' || String(project.createdBy) === String(user._id);
+      if (!canManageProjectMembership) {
+        throw new Error('EDIT project access required');
+      }
       const member = project.members.find((entry) => String(entry.user) === String(args.input.userId));
       if (!member) throw new Error('Project member not found');
       member.accessLevel = args.input.accessLevel;
@@ -702,7 +710,11 @@ const resolvers = {
       if (!project) throw new Error('Project not found');
       const workspace = await Workspace.findById(project.workspace);
       assertWorkspaceAccess(workspace, user._id);
-      assertProjectAccess(project, user._id, 'MANAGE');
+      const workspaceRole = getWorkspaceRole(workspace, user._id);
+      const canManageProjectMembership = ['ADMIN', 'MANAGER'].includes(workspaceRole) || getProjectAccessLevel(project, user._id) === 'EDIT' || String(project.createdBy) === String(user._id);
+      if (!canManageProjectMembership) {
+        throw new Error('EDIT project access required');
+      }
       if (String(args.userId) === String(project.createdBy)) throw new Error('Project creator cannot be removed');
       project.members = project.members.filter((entry) => String(entry.user) !== String(args.userId));
       await project.save();

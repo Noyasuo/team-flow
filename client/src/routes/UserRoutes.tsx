@@ -6,6 +6,7 @@ import { KanbanPage } from '../pages/user/KanbanPage';
 import { NotificationsPage } from '../pages/user/NotificationsPage';
 import { ProjectsFallbackPage } from '../pages/user/ProjectsFallbackPage';
 import { TaskDetailsPage } from '../pages/user/TaskDetailsPage';
+import { WorkspaceMembersPage } from '../pages/user/WorkspaceMembersPage';
 
 export const userRoutes = (
   <>
@@ -14,6 +15,7 @@ export const userRoutes = (
         <Route path="/" element={<DashboardPage />} />
         <Route path="/projects" element={<ProjectsFallbackPage />} />
         <Route path="/projects/:projectId" element={<KanbanPage />} />
+        <Route path="/workspace-members" element={<WorkspaceMembersPage />} />
         <Route path="/tasks/:taskId" element={<TaskDetailsPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
       </Route>

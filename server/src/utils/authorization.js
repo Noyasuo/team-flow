@@ -36,14 +36,14 @@ function assertWorkspaceRole(workspace, userId, allowedRoles) {
 }
 
 function getProjectAccessLevel(project, userId) {
-  if (String(project.createdBy) === String(userId)) return 'MANAGE';
+  if (String(project.createdBy) === String(userId)) return 'EDIT';
   const member = (project.members || []).find((entry) => String(entry.user) === String(userId));
   return member ? member.accessLevel : null;
 }
 
 function assertProjectAccess(project, userId, minimumLevel) {
   const accessLevel = getProjectAccessLevel(project, userId);
-  const levels = { VIEW: 0, EDIT: 1, MANAGE: 2 };
+  const levels = { VIEW: 0, EDIT: 1 };
   if (!accessLevel || levels[accessLevel] < levels[minimumLevel]) {
     throw new Error(`${minimumLevel} project access required`);
   }

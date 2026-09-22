@@ -30,7 +30,7 @@ const typeDefs = `#graphql
     URGENT
   }
 
-  enum ProjectAccessLevel { VIEW EDIT MANAGE }
+  enum ProjectAccessLevel { VIEW EDIT }
 
   enum NotificationKind {
     INFO

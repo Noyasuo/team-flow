@@ -49,7 +49,7 @@ type ProjectResult = {
     name: string;
     description?: string | null;
     createdBy: { id: string; name: string };
-    members: Array<{ user: { id: string; name: string; email: string }; accessLevel: 'VIEW' | 'EDIT' | 'MANAGE' }>;
+    members: Array<{ user: { id: string; name: string; email: string }; accessLevel: 'VIEW' | 'EDIT' }>;
     workspace: {
       id: string;
       name: string;
@@ -61,6 +61,13 @@ type ProjectResult = {
 
 const columns: Array<TaskNode['status']> = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 
+function normalizeProjectAccessLevel(value?: string | null): 'VIEW' | 'EDIT' {
+  if (value === 'EDIT' || value === 'MANAGE') {
+    return 'EDIT';
+  }
+  return value === 'VIEW' ? 'VIEW' : 'VIEW';
+}
+
 export function KanbanPage() {
   const navigate = useNavigate();
   const { projectId } = useParams();
@@ -68,7 +75,7 @@ export function KanbanPage() {
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
   const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [selectedAccess, setSelectedAccess] = useState<'VIEW' | 'EDIT' | 'MANAGE'>('VIEW');
+  const [selectedAccess, setSelectedAccess] = useState<'VIEW' | 'EDIT'>('VIEW');
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [taskFormError, setTaskFormError] = useState('');
 
@@ -138,12 +145,14 @@ export function KanbanPage() {
   const currentProjectRole = isWorkspaceOwner
     ? 'ADMIN'
     : isProjectCreator
-      ? 'MANAGE'
+      ? 'EDIT'
     : selectedProject?.workspace.members.find((member) => member.user.id === user?.id)?.role ?? null;
-  const projectMemberAccess = selectedProject?.members.find((member) => member.user.id === user?.id)?.accessLevel ?? null;
-  // Mirrors the server's project access rule (authorization.js: getProjectAccessLevel) -
-  // only the project creator or an explicit MANAGE member can manage access, regardless of workspace role.
-  const canManageProject = isProjectCreator || projectMemberAccess === 'MANAGE';
+  const projectMemberAccess = normalizeProjectAccessLevel(
+    selectedProject?.members.find((member) => member.user.id === user?.id)?.accessLevel ?? null
+  );
+  const workspaceRole = currentProjectRole ?? 'MEMBER';
+  // Workspace admins/managers and the project creator can manage project members.
+  const canManageProject = isProjectCreator || isWorkspaceOwner || ['ADMIN', 'MANAGER'].includes(workspaceRole) || projectMemberAccess === 'EDIT';
   const availableMembers = selectedProject?.workspace.members.filter(
     (member) => member.user.id !== selectedProject.createdBy.id && !selectedProject.members.some((projectMember) => projectMember.user.id === member.user.id)
   ) ?? [];
@@ -286,28 +295,28 @@ export function KanbanPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold">Project access</h3>
-              <p className="text-sm text-ink/60">Assign VIEW, EDIT, or MANAGE access for this project.</p>
+              <p className="text-sm text-ink/60">Assign VIEW or EDIT access for this project.</p>
             </div>
             <span className="rounded-full bg-aqua/10 px-3 py-1 text-xs font-medium text-aqua">Your access: {currentProjectRole ?? 'VIEW'}</span>
           </div>
           <div className="mt-3 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink/10 p-3 text-sm">
               <span><strong>{selectedProject.createdBy.name}</strong> <span className="text-ink/60">Project creator</span></span>
-              <span className="rounded-lg bg-ink/5 px-2 py-1 text-xs">MANAGE</span>
+              <span className="rounded-lg bg-ink/5 px-2 py-1 text-xs">EDIT</span>
             </div>
             {selectedProject.members.map((member) => (
               <div key={member.user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink/10 p-3 text-sm">
                 <span><strong>{member.user.name}</strong> <span className="text-ink/60">{member.user.email}</span></span>
                 {canManageProject ? (
-                  <div className="flex items-center gap-2"><select value={member.accessLevel} onChange={(event) => void handleProjectAccessChange(member.user.id, event.target.value)} className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"><option>VIEW</option><option>EDIT</option><option>MANAGE</option></select><button type="button" onClick={() => void handleRemoveProjectMember(member.user.id)} className="rounded-lg border border-ember/30 px-2 py-1.5 text-xs text-ember">Remove</button></div>
-                ) : <span className="rounded-lg bg-ink/5 px-2 py-1 text-xs">{member.accessLevel}</span>}
+                  <div className="flex items-center gap-2"><select value={normalizeProjectAccessLevel(member.accessLevel)} onChange={(event) => void handleProjectAccessChange(member.user.id, event.target.value)} className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"><option value="VIEW">VIEW</option><option value="EDIT">EDIT</option></select><button type="button" onClick={() => void handleRemoveProjectMember(member.user.id)} className="rounded-lg border border-ember/30 px-2 py-1.5 text-xs text-ember">Remove</button></div>
+                ) : <span className="rounded-lg bg-ink/5 px-2 py-1 text-xs">{normalizeProjectAccessLevel(member.accessLevel)}</span>}
               </div>
             ))}
           </div>
           {canManageProject && availableMembers.length > 0 ? (
             <div className="mt-4 flex flex-wrap gap-2 border-t border-ink/10 pt-4">
               <select value={selectedMemberId} onChange={(event) => setSelectedMemberId(event.target.value)} className="rounded-lg border border-ink/10 bg-white px-2 py-2 text-sm"><option value="">Add workspace member...</option>{availableMembers.map((member) => <option key={member.user.id} value={member.user.id}>{member.user.name}</option>)}</select>
-              <select value={selectedAccess} onChange={(event) => setSelectedAccess(event.target.value as 'VIEW' | 'EDIT' | 'MANAGE')} className="rounded-lg border border-ink/10 bg-white px-2 py-2 text-sm"><option>VIEW</option><option>EDIT</option><option>MANAGE</option></select>
+              <select value={selectedAccess} onChange={(event) => setSelectedAccess(event.target.value as 'VIEW' | 'EDIT')} className="rounded-lg border border-ink/10 bg-white px-2 py-2 text-sm"><option>VIEW</option><option>EDIT</option></select>
               <button type="button" onClick={() => void handleAddProjectMember()} className="rounded-lg bg-ink px-3 py-2 text-sm text-mist">Add access</button>
             </div>
           ) : null}

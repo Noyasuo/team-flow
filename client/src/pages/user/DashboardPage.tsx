@@ -1,15 +1,14 @@
 import { useMutation, useQuery, useSubscription } from '@apollo/client/react';
 import React from 'react';
 import dayjs from 'dayjs';
-import { Plus, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Users, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ADD_WORKSPACE_MEMBER,
   CREATE_PROJECT,
   CREATE_WORKSPACE,
   DASHBOARD,
   PROJECTS,
-  REMOVE_WORKSPACE_MEMBER,
   USERS,
   WORKSPACE_UPDATED_SUBSCRIPTION,
   WORKSPACES,
@@ -83,14 +82,8 @@ const metricLabels = [
   { key: 'completedTasksThisWeek', label: 'Done (7d)' },
 ] as const;
 
-const workspaceRoles: Array<'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'> = [
-  'ADMIN',
-  'MANAGER',
-  'MEMBER',
-  'VIEWER',
-];
-
 export function DashboardPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { showToast } = useToast();
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext();
@@ -101,8 +94,6 @@ export function DashboardPage() {
   const [createProject, { loading: createProjectLoading }] = useMutation(CREATE_PROJECT);
   const [addWorkspaceMember, { loading: addWorkspaceMemberLoading }] =
     useMutation<AddWorkspaceMemberResult>(ADD_WORKSPACE_MEMBER);
-  const [updateWorkspaceMemberRole] = useMutation<AddWorkspaceMemberResult>(ADD_WORKSPACE_MEMBER);
-  const [removeWorkspaceMember] = useMutation(REMOVE_WORKSPACE_MEMBER);
   const [showCreateWorkspace, setShowCreateWorkspace] = React.useState(false);
   const [workspaceFormError, setWorkspaceFormError] = React.useState('');
   const [showCreateProject, setShowCreateProject] = React.useState(false);
@@ -226,6 +217,10 @@ export function DashboardPage() {
     setShowCreateProject(true);
   }
 
+  function openMembersSection() {
+    navigate('/workspace-members');
+  }
+
   async function handleCreateProject(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeWorkspace) {
@@ -265,16 +260,6 @@ export function DashboardPage() {
     }
   }
 
-  function openAddMemberModal() {
-    if (!activeWorkspace || !canManageMembers) {
-      showToast('Only the workspace creator can add members.', 'error');
-      return;
-    }
-
-    setAddMemberFormError('');
-    setShowAddMember(true);
-  }
-
   async function handleAddWorkspaceMember(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeWorkspace) {
@@ -284,7 +269,7 @@ export function DashboardPage() {
     setAddMemberFormError('');
     const form = new FormData(event.currentTarget);
     const userId = String(form.get('userId') ?? '');
-    const role = String(form.get('role') ?? 'MEMBER') as 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
+    const role = 'MEMBER' as 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
     const targetUser = (usersData?.users.nodes ?? []).find((candidate) => candidate.id === userId);
 
     if (!targetUser) {
@@ -311,60 +296,6 @@ export function DashboardPage() {
         addError instanceof Error
           ? addError.message.replace(/^GraphQL error:\s*/i, '')
           : 'Unable to add member.'
-      );
-    }
-  }
-
-  async function handleWorkspaceMemberRoleChange(
-    memberId: string,
-    memberName: string,
-    role: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'
-  ) {
-    if (!activeWorkspace) {
-      return;
-    }
-
-    try {
-      await updateWorkspaceMemberRole({
-        variables: {
-          input: {
-            workspaceId: activeWorkspace.id,
-            userId: memberId,
-            role,
-          },
-        },
-      });
-
-      await refetch();
-      showToast(`${memberName}'s access updated to ${role}.`, 'success');
-    } catch (updateError) {
-      showToast(
-        updateError instanceof Error
-          ? updateError.message.replace(/^GraphQL error:\s*/i, '')
-          : 'Unable to update member access.',
-        'error'
-      );
-    }
-  }
-
-  async function handleRemoveWorkspaceMember(memberId: string, memberName: string) {
-    if (!activeWorkspace) {
-      return;
-    }
-
-    try {
-      await removeWorkspaceMember({
-        variables: { workspaceId: activeWorkspace.id, userId: memberId },
-      });
-
-      await Promise.all([refetch(), refetchUsers()]);
-      showToast(`${memberName} removed from workspace.`, 'success');
-    } catch (removeError) {
-      showToast(
-        removeError instanceof Error
-          ? removeError.message.replace(/^GraphQL error:\s*/i, '')
-          : 'Unable to remove member.',
-        'error'
       );
     }
   }
@@ -406,42 +337,38 @@ export function DashboardPage() {
 
   return (
     <section className="space-y-6">
-      <div>
-        <p className="text-sm uppercase tracking-[0.25em] text-aqua">Workspace</p>
-        <h2 className="text-3xl font-semibold">{activeWorkspace.name}</h2>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {canCreateProject ? (
-            <button
-              type="button"
-              onClick={openCreateProjectModal}
-              disabled={createProjectLoading}
-              className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
-            >
-              {createProjectLoading ? 'Creating...' : 'Create project'}
-            </button>
-          ) : null}
-          {canCreateWorkspace ? (
-            <button
-              type="button"
-              onClick={openCreateWorkspaceModal}
-              disabled={createWorkspaceLoading}
-              className="rounded-xl border border-ink/20 px-4 py-2 text-sm hover:bg-ink/5 disabled:opacity-70"
-            >
-              {createWorkspaceLoading ? 'Creating...' : 'New workspace'}
-            </button>
-          ) : null}
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {canCreateProject ? (
+          <button
+            type="button"
+            onClick={openCreateProjectModal}
+            disabled={createProjectLoading}
+            className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
+          >
+            {createProjectLoading ? 'Creating...' : 'Create project'}
+          </button>
+        ) : null}
+        {canCreateWorkspace ? (
+          <button
+            type="button"
+            onClick={openCreateWorkspaceModal}
+            disabled={createWorkspaceLoading}
+            className="inline-flex items-center gap-2 rounded-xl border border-ink/20 px-4 py-2 text-sm hover:bg-ink/5 disabled:opacity-70"
+          >
+            <Users size={15} />
+            {createWorkspaceLoading ? 'Creating...' : 'New workspace'}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={openMembersSection}
+          className="inline-flex items-center gap-2 rounded-xl border border-ink/20 px-3 py-2 text-sm hover:bg-ink/5"
+          aria-label="Go to workspace members"
+        >
+          <Users size={15} />
+          Members
+        </button>
       </div>
-
-      {canManageMembers ? (
-        <WorkspaceMembersPanel
-          members={activeWorkspace?.members ?? []}
-          ownerId={activeWorkspace?.owner.id}
-          onAddMember={openAddMemberModal}
-          onRoleChange={handleWorkspaceMemberRoleChange}
-          onRemove={handleRemoveWorkspaceMember}
-        />
-      ) : null}
 
       {dashboardLoading ? (
         <p className="text-sm text-ink/70">Loading analytics...</p>
@@ -557,93 +484,6 @@ export function DashboardPage() {
   );
 }
 
-function WorkspaceMembersPanel({
-  members,
-  ownerId,
-  onAddMember,
-  onRoleChange,
-  onRemove,
-}: {
-  members: Workspace['members'];
-  ownerId?: string;
-  onAddMember: () => void;
-  onRoleChange: (memberId: string, memberName: string, role: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER') => void;
-  onRemove: (memberId: string, memberName: string) => void;
-}) {
-  return (
-    <section className="rounded-2xl border border-white/80 bg-white/85 p-5 shadow-float">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-lg font-semibold">Workspace members</h3>
-          <p className="text-sm text-ink/60">Manage roles and access for this workspace.</p>
-        </div>
-        <button
-          type="button"
-          onClick={onAddMember}
-          className="inline-flex items-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm text-mist"
-        >
-          <Plus size={15} /> Add member
-        </button>
-      </div>
-      <div className="max-h-80 overflow-y-auto overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 z-10 border-b border-ink/10 bg-white text-xs uppercase text-ink/50">
-            <tr><th className="p-3">Member</th><th className="p-3">Role</th><th className="p-3">Action</th></tr>
-          </thead>
-          <tbody>
-            {members.map((member) => {
-              const isOwner = ownerId === member.user.id;
-              return (
-                <tr key={member.user.id} className="border-b border-ink/5">
-                  <td className="p-3">
-                    <strong>{member.user.name}</strong>
-                    <p className="text-xs text-ink/50">{member.user.email}</p>
-                  </td>
-                  <td className="p-3">
-                    {isOwner ? (
-                      <span className="rounded-full bg-ink px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-mist">
-                        Owner
-                      </span>
-                    ) : (
-                      <select
-                        aria-label={`${member.user.name}'s role`}
-                        value={member.role}
-                        onChange={(event) =>
-                          onRoleChange(member.user.id, member.user.name, event.target.value as typeof member.role)
-                        }
-                        className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"
-                      >
-                        {workspaceRoles.map((role) => (
-                          <option key={role} value={role}>
-                            {role}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </td>
-                  <td className="p-3">
-                    {isOwner ? (
-                      <span className="text-xs text-ink/40">—</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onRemove(member.user.id, member.user.name)}
-                        className="rounded-lg border border-ember/30 px-3 py-1.5 text-xs text-ember"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 function AddWorkspaceMemberModal({
   error,
   loading,
@@ -683,21 +523,6 @@ function AddWorkspaceMemberModal({
             {memberOptions.map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
                 {candidate.name} · {candidate.email}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium">Role</span>
-          <select
-            name="role"
-            defaultValue="MEMBER"
-            className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm outline-none focus:border-aqua"
-          >
-            {workspaceRoles.map((role) => (
-              <option key={role} value={role}>
-                {role}
               </option>
             ))}
           </select>
