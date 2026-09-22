@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom';
 import { CREATE_PROJECT, PROJECTS, WORKSPACES } from '../../lib/graphql';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { CreateProjectModal } from '../../components/CreateProjectModal';
 
 type WorkspaceResult = {
   workspaces: Array<{
@@ -30,6 +32,7 @@ type ProjectResult = {
 
 export function ProjectsFallbackPage() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext();
   const { data: workspacesData, loading: workspacesLoading } =
     useQuery<WorkspaceResult>(WORKSPACES);
@@ -43,6 +46,8 @@ export function ProjectsFallbackPage() {
     activeWorkspace?.members.find((member) => member.user.id === user?.id)?.role ?? null;
   const canCreateProject = activeWorkspaceRole ? ['ADMIN', 'MANAGER'].includes(activeWorkspaceRole) : false;
   const canCreateWorkspace = ['ADMIN', 'MANAGER'].includes(user?.role ?? 'MEMBER');
+  const [showCreateProject, setShowCreateProject] = React.useState(false);
+  const [projectFormError, setProjectFormError] = React.useState('');
 
   // Sync selected workspace when first workspace loads
   React.useEffect(() => {
@@ -61,33 +66,57 @@ export function ProjectsFallbackPage() {
       },
     });
 
-  async function handleCreateProject() {
+  function openCreateProjectModal() {
     if (!activeWorkspace) {
       return;
     }
 
     if (!canCreateProject) {
-      window.alert('You do not have permission to create projects in this workspace.');
+      showToast('You do not have permission to create projects in this workspace.', 'error');
       return;
     }
 
-    const projectName = window.prompt('Project name');
-    if (!projectName) {
+    setProjectFormError('');
+    setShowCreateProject(true);
+  }
+
+  async function handleCreateProject(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeWorkspace) {
       return;
     }
 
-    await createProject({
-      variables: {
-        input: {
-          workspaceId: activeWorkspace.id,
-          name: projectName,
-          description: '',
-          status: 'ACTIVE',
+    setProjectFormError('');
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') ?? '').trim();
+    const description = String(form.get('description') ?? '').trim();
+
+    if (name.length < 2) {
+      setProjectFormError('Project name must be at least 2 characters.');
+      return;
+    }
+
+    try {
+      await createProject({
+        variables: {
+          input: {
+            workspaceId: activeWorkspace.id,
+            name,
+            description,
+            status: 'ACTIVE',
+          },
         },
-      },
-    });
+      });
 
-    await refetch();
+      await refetch();
+      setShowCreateProject(false);
+    } catch (createError) {
+      setProjectFormError(
+        createError instanceof Error
+          ? createError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to create project.'
+      );
+    }
   }
 
   if (workspacesLoading) {
@@ -117,7 +146,7 @@ export function ProjectsFallbackPage() {
         {canCreateProject ? (
           <button
             type="button"
-            onClick={() => void handleCreateProject()}
+            onClick={openCreateProjectModal}
             disabled={createProjectLoading}
             className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
           >
@@ -152,6 +181,15 @@ export function ProjectsFallbackPage() {
           ))}
         </ul>
       )}
+
+      {showCreateProject ? (
+        <CreateProjectModal
+          error={projectFormError}
+          loading={createProjectLoading}
+          onClose={() => setShowCreateProject(false)}
+          onSubmit={handleCreateProject}
+        />
+      ) : null}
     </section>
   );
 }

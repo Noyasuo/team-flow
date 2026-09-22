@@ -1,10 +1,12 @@
 import { useMutation, useQuery } from '@apollo/client/react';
 import dayjs from 'dayjs';
 import { ArrowLeft } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ADD_PROJECT_MEMBER, CREATE_TASK, PROJECT, REMOVE_PROJECT_MEMBER, TASKS, UPDATE_PROJECT_MEMBER_ACCESS, UPDATE_TASK } from '../../lib/graphql';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { CreateTaskModal } from '../../components/CreateTaskModal';
 
 type TaskNode = {
   id: string;
@@ -52,9 +54,12 @@ export function KanbanPage() {
   const navigate = useNavigate();
   const { projectId } = useParams();
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [search, setSearch] = useState('');
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [selectedAccess, setSelectedAccess] = useState<'VIEW' | 'EDIT' | 'MANAGE'>('VIEW');
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [taskFormError, setTaskFormError] = useState('');
 
   const { data: projectData, loading: projectLoading, refetch: refetchProject } = useQuery<ProjectResult>(PROJECT, {
     skip: !projectId,
@@ -128,31 +133,55 @@ export function KanbanPage() {
     await refetchProject();
   }
 
-  async function handleCreateTask() {
-    const title = window.prompt('Task title');
-    if (!title) {
-      return;
-    }
-
+  function openCreateTaskModal() {
     if (!workspaceId) {
-      window.alert('Project workspace is still loading. Please try again in a moment.');
+      showToast('Project workspace is still loading. Please try again in a moment.', 'error');
       return;
     }
 
-    await createTask({
-      variables: {
-        input: {
-          workspaceId,
-          projectId,
-          title,
-          description: '',
-          priority: 'MEDIUM',
-          status: 'TODO',
-        },
-      },
-    });
+    setTaskFormError('');
+    setShowCreateTask(true);
+  }
 
-    await refetch();
+  async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workspaceId) {
+      setTaskFormError('Project workspace is still loading. Please try again in a moment.');
+      return;
+    }
+
+    setTaskFormError('');
+    const form = new FormData(event.currentTarget);
+    const title = String(form.get('title') ?? '').trim();
+
+    if (title.length < 2) {
+      setTaskFormError('Task title must be at least 2 characters.');
+      return;
+    }
+
+    try {
+      await createTask({
+        variables: {
+          input: {
+            workspaceId,
+            projectId,
+            title,
+            description: '',
+            priority: 'MEDIUM',
+            status: 'TODO',
+          },
+        },
+      });
+
+      await refetch();
+      setShowCreateTask(false);
+    } catch (createError) {
+      setTaskFormError(
+        createError instanceof Error
+          ? createError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to create task.'
+      );
+    }
   }
 
   async function handleStatusChange(taskId: string, status: TaskNode['status']) {
@@ -209,7 +238,7 @@ export function KanbanPage() {
           </button>
           <button
             type="button"
-            onClick={() => void handleCreateTask()}
+            onClick={openCreateTaskModal}
             disabled={createTaskLoading}
             className="rounded-xl bg-ink px-3 py-2 text-sm text-mist"
           >
@@ -310,6 +339,15 @@ export function KanbanPage() {
           ))}
         </div>
       )}
+
+      {showCreateTask ? (
+        <CreateTaskModal
+          error={taskFormError}
+          loading={createTaskLoading}
+          onClose={() => setShowCreateTask(false)}
+          onSubmit={handleCreateTask}
+        />
+      ) : null}
     </section>
   );
 }

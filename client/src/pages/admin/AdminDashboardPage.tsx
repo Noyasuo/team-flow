@@ -108,13 +108,8 @@ export function AdminDashboardPage() {
   async function handleUpdateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingUser) return;
+    setUserFormError('');
     const form = new FormData(event.currentTarget);
-    const password = String(form.get('password') ?? '');
-    const passwordConfirmation = String(form.get('passwordConfirmation') ?? '');
-    if (password !== passwordConfirmation) {
-      window.alert('New password and confirmation must match.');
-      return;
-    }
     try {
       await updateUser({
         variables: {
@@ -124,7 +119,6 @@ export function AdminDashboardPage() {
             name: form.get('name'),
             email: form.get('email'),
             title: form.get('title'),
-            password: password || undefined,
             isActive: form.get('isActive') === 'true',
             role: form.get('role'),
           },

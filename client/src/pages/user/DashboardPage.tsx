@@ -14,6 +14,8 @@ import {
 } from '../../lib/graphql';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { CreateProjectModal } from '../../components/CreateProjectModal';
 
 type Workspace = {
   id: string;
@@ -88,6 +90,7 @@ const workspaceRoles: Array<'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'> = [
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext();
   const { data: workspaceData, loading: workspacesLoading, refetch } =
     useQuery<WorkspacesResult>(WORKSPACES);
@@ -100,6 +103,8 @@ export function DashboardPage() {
   const [memberRole, setMemberRole] = React.useState<'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'>('MEMBER');
   const [showCreateWorkspace, setShowCreateWorkspace] = React.useState(false);
   const [workspaceFormError, setWorkspaceFormError] = React.useState('');
+  const [showCreateProject, setShowCreateProject] = React.useState(false);
+  const [projectFormError, setProjectFormError] = React.useState('');
 
   // Use selected workspace or fall back to first
   const activeWorkspace = workspaceData?.workspaces?.find((w) => w.id === selectedWorkspaceId) ??
@@ -158,7 +163,7 @@ export function DashboardPage() {
 
   function openCreateWorkspaceModal() {
     if (!canCreateWorkspace) {
-      window.alert('Only ADMIN or MANAGER accounts can create workspaces.');
+      showToast('Only ADMIN or MANAGER accounts can create workspaces.', 'error');
       return;
     }
 
@@ -206,47 +211,69 @@ export function DashboardPage() {
     }
   }
 
-  async function handleCreateProject() {
+  function openCreateProjectModal() {
     if (!activeWorkspace) {
       return;
     }
 
     if (!canCreateProject) {
-      window.alert('You do not have permission to create projects in this workspace.');
+      showToast('You do not have permission to create projects in this workspace.', 'error');
       return;
     }
 
-    const projectName = window.prompt('Project name');
-    if (!projectName) {
+    setProjectFormError('');
+    setShowCreateProject(true);
+  }
+
+  async function handleCreateProject(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeWorkspace) {
       return;
     }
 
-    const projectDescription = window.prompt('Project description (optional)') ?? '';
+    setProjectFormError('');
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') ?? '').trim();
+    const description = String(form.get('description') ?? '').trim();
 
-    await createProject({
-      variables: {
-        input: {
-          workspaceId: activeWorkspace.id,
-          name: projectName,
-          description: projectDescription,
-          status: 'ACTIVE',
+    if (name.length < 2) {
+      setProjectFormError('Project name must be at least 2 characters.');
+      return;
+    }
+
+    try {
+      await createProject({
+        variables: {
+          input: {
+            workspaceId: activeWorkspace.id,
+            name,
+            description,
+            status: 'ACTIVE',
+          },
         },
-      },
-    });
+      });
 
-    await Promise.all([refetch(), refetchDashboard(), refetchProjects()]);
+      await Promise.all([refetch(), refetchDashboard(), refetchProjects()]);
+      setShowCreateProject(false);
+    } catch (createError) {
+      setProjectFormError(
+        createError instanceof Error
+          ? createError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to create project.'
+      );
+    }
   }
 
   async function handleAddWorkspaceMember() {
     if (!activeWorkspace || !canManageMembers) {
-      window.alert('Only the workspace creator can add members.');
+      showToast('Only the workspace creator can add members.', 'error');
       return;
     }
 
     const targetUser = (usersData?.users.nodes ?? []).find((candidate) => candidate.id === memberUserId);
 
     if (!targetUser) {
-      window.alert('Select a user to add.');
+      showToast('Select a user to add.', 'error');
       return;
     }
 
@@ -263,7 +290,7 @@ export function DashboardPage() {
     await Promise.all([refetch(), refetchUsers()]);
     setMemberUserId('');
     setMemberRole('MEMBER');
-    window.alert(`${targetUser.name} added as ${memberRole}.`);
+    showToast(`${targetUser.name} added as ${memberRole}.`, 'success');
   }
 
   if (workspacesLoading) {
@@ -310,7 +337,7 @@ export function DashboardPage() {
           {canCreateProject ? (
             <button
               type="button"
-              onClick={() => void handleCreateProject()}
+              onClick={openCreateProjectModal}
               disabled={createProjectLoading}
               className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
             >
@@ -469,7 +496,7 @@ export function DashboardPage() {
             </p>
             <button
               type="button"
-              onClick={() => void handleCreateProject()}
+              onClick={openCreateProjectModal}
               disabled={createProjectLoading || !canCreateProject}
               className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
             >
@@ -499,6 +526,15 @@ export function DashboardPage() {
           </ul>
         )}
       </article>
+
+      {showCreateProject ? (
+        <CreateProjectModal
+          error={projectFormError}
+          loading={createProjectLoading}
+          onClose={() => setShowCreateProject(false)}
+          onSubmit={handleCreateProject}
+        />
+      ) : null}
 
       {showCreateWorkspace ? (
         <CreateWorkspaceModal
