@@ -343,6 +343,7 @@ const typeDefs = `#graphql
     resetAdminUserPassword(userId: ID!): User!
     changeAdminUserPassword(userId: ID!, password: String!): User!
     setUserActive(userId: ID!, isActive: Boolean!): User!
+    deleteAdminUser(userId: ID!): Boolean!
     setAdminTaskStatus(taskId: ID!, status: TaskStatus!): Task!
 
     createWorkspace(input: CreateWorkspaceInput!): Workspace!

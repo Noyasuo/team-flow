@@ -19,6 +19,7 @@ const {
 } = require('../utils/authorization');
 const { normalizePagination, buildPageInfo } = require('../utils/pagination');
 const { createActivity, createNotifications } = require('../utils/activity');
+const { deleteUserAndDependencies } = require('../utils/userDeletion');
 
 const registerSchema = z.object({
   name: z.string().min(2).max(80),
@@ -616,6 +617,23 @@ const resolvers = {
       }
       targetUser.isActive = args.isActive;
       return targetUser.save();
+    },
+
+    deleteAdminUser: async (_parent, args, context) => {
+      const currentAdmin = assertAdmin(context);
+      const targetId = parseId(args.userId);
+
+      if (String(targetId) === String(currentAdmin._id)) {
+        throw new Error('You cannot delete your own admin account');
+      }
+
+      const targetUser = await User.findById(targetId);
+      if (!targetUser) {
+        throw new Error('User not found');
+      }
+
+      await deleteUserAndDependencies(targetId);
+      return true;
     },
 
     setAdminTaskStatus: async (_parent, args, context) => {

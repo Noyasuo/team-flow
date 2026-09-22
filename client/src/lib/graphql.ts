@@ -208,6 +208,12 @@ export const SET_USER_ACTIVE = gql`
   }
 `;
 
+export const DELETE_ADMIN_USER = gql`
+  mutation DeleteAdminUser($userId: ID!) {
+    deleteAdminUser(userId: $userId)
+  }
+`;
+
 export const SET_ADMIN_TASK_STATUS = gql`
   mutation SetAdminTaskStatus($taskId: ID!, $status: TaskStatus!) {
     setAdminTaskStatus(taskId: $taskId, status: $status) { id status }
