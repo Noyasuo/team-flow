@@ -1,9 +1,20 @@
-import { useMutation, useQuery } from '@apollo/client/react';
+import { useMutation, useQuery, useSubscription } from '@apollo/client/react';
 import dayjs from 'dayjs';
 import { ArrowLeft } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ADD_PROJECT_MEMBER, CREATE_TASK, PROJECT, REMOVE_PROJECT_MEMBER, TASKS, UPDATE_PROJECT_MEMBER_ACCESS, UPDATE_TASK } from '../../lib/graphql';
+import {
+  ADD_PROJECT_MEMBER,
+  CREATE_TASK,
+  PROJECT,
+  PROJECT_UPDATED_SUBSCRIPTION,
+  REMOVE_PROJECT_MEMBER,
+  TASK_CHANGED_SUBSCRIPTION,
+  TASKS,
+  UPDATE_PROJECT_MEMBER_ACCESS,
+  UPDATE_TASK,
+  WORKSPACE_UPDATED_SUBSCRIPTION,
+} from '../../lib/graphql';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { CreateTaskModal } from '../../components/CreateTaskModal';
@@ -81,6 +92,25 @@ export function KanbanPage() {
   const [addProjectMember] = useMutation(ADD_PROJECT_MEMBER);
   const [updateProjectMemberAccess] = useMutation(UPDATE_PROJECT_MEMBER_ACCESS);
   const [removeProjectMember] = useMutation(REMOVE_PROJECT_MEMBER);
+
+  // Live updates: any task change, project-access change, or workspace-membership
+  // change on this board refreshes the relevant query automatically - no manual refresh needed.
+  const liveWorkspaceId = projectData?.project?.workspace.id;
+  useSubscription(TASK_CHANGED_SUBSCRIPTION, {
+    variables: { projectId },
+    skip: !projectId,
+    onData: () => void refetch(),
+  });
+  useSubscription(PROJECT_UPDATED_SUBSCRIPTION, {
+    variables: { projectId },
+    skip: !projectId,
+    onData: () => void refetchProject(),
+  });
+  useSubscription(WORKSPACE_UPDATED_SUBSCRIPTION, {
+    variables: { workspaceId: liveWorkspaceId },
+    skip: !liveWorkspaceId,
+    onData: () => void refetchProject(),
+  });
 
   const groupedTasks = useMemo(() => {
     const bucket: Record<TaskNode['status'], TaskNode[]> = {

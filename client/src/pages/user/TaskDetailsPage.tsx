@@ -1,9 +1,9 @@
-import { useMutation, useQuery } from '@apollo/client/react';
+import { useMutation, useQuery, useSubscription } from '@apollo/client/react';
 import dayjs from 'dayjs';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ADD_COMMENT, TASK, UPDATE_TASK } from '../../lib/graphql';
+import { ADD_COMMENT, COMMENT_ADDED_SUBSCRIPTION, TASK, TASK_CHANGED_SUBSCRIPTION, UPDATE_TASK } from '../../lib/graphql';
 
 type TaskResult = {
   task: {
@@ -42,6 +42,19 @@ export function TaskDetailsPage() {
   });
   const [addComment, { loading: commentLoading }] = useMutation(ADD_COMMENT);
   const [updateTask, { loading: updateLoading }] = useMutation(UPDATE_TASK);
+
+  // Live updates: new comments and task edits made elsewhere refresh this page automatically.
+  const liveProjectId = data?.task?.project.id;
+  useSubscription(COMMENT_ADDED_SUBSCRIPTION, {
+    variables: { taskId },
+    skip: !taskId,
+    onData: () => void refetch(),
+  });
+  useSubscription(TASK_CHANGED_SUBSCRIPTION, {
+    variables: { projectId: liveProjectId },
+    skip: !liveProjectId,
+    onData: () => void refetch(),
+  });
 
   useEffect(() => {
     if (!data?.task) {

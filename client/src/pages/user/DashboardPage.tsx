@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@apollo/client/react';
+import { useMutation, useQuery, useSubscription } from '@apollo/client/react';
 import React from 'react';
 import dayjs from 'dayjs';
 import { X } from 'lucide-react';
@@ -11,6 +11,7 @@ import {
   PROJECTS,
   REMOVE_WORKSPACE_MEMBER,
   USERS,
+  WORKSPACE_UPDATED_SUBSCRIPTION,
   WORKSPACES,
 } from '../../lib/graphql';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -128,6 +129,13 @@ export function DashboardPage() {
   const memberOptions = (usersData?.users.nodes ?? []).filter(
     (candidate) => !activeWorkspace?.members.some((member) => member.user.id === candidate.id)
   );
+
+  // Live updates: membership/role changes on the active workspace refresh this page automatically.
+  useSubscription(WORKSPACE_UPDATED_SUBSCRIPTION, {
+    variables: { workspaceId: activeWorkspace?.id },
+    skip: !activeWorkspace,
+    onData: () => void refetch(),
+  });
 
   // Sync selected workspace when first workspace loads
   React.useEffect(() => {

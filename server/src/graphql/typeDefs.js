@@ -365,6 +365,14 @@ const typeDefs = `#graphql
     markNotificationRead(notificationId: ID!): Notification!
     markAllNotificationsRead: Boolean!
   }
+
+  type Subscription {
+    taskChanged(projectId: ID!): Task!
+    commentAdded(taskId: ID!): Comment!
+    notificationAdded: Notification!
+    workspaceUpdated(workspaceId: ID!): Workspace!
+    projectUpdated(projectId: ID!): Project!
+  }
 `;
 
 module.exports = { typeDefs };

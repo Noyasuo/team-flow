@@ -16,6 +16,7 @@
     "clsx": "^2.1.1",
     "dayjs": "^1.11.21",
     "graphql": "^16.14.2",
+    "graphql-ws": "^6.2.2",
     "lucide-react": "^1.21.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

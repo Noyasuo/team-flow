@@ -20,6 +20,7 @@ const {
 const { normalizePagination, buildPageInfo } = require('../utils/pagination');
 const { createActivity, createNotifications } = require('../utils/activity');
 const { deleteUserAndDependencies } = require('../utils/userDeletion');
+const { pubsub, EVENTS } = require('./pubsub');
 
 const registerSchema = z.object({
   name: z.string().min(2).max(80),
@@ -161,6 +162,8 @@ async function addWorkspaceMemberResolver(_parent, args, context) {
     referenceId: workspace._id,
   });
 
+  pubsub.publish(EVENTS.WORKSPACE_UPDATED(String(workspace._id)), { workspaceUpdated: workspace });
+
   return workspace;
 }
 
@@ -191,6 +194,8 @@ async function removeWorkspaceMemberResolver(_parent, args, context) {
     action: 'MEMBER_REMOVED',
     meta: { userId: String(memberId) },
   });
+
+  pubsub.publish(EVENTS.WORKSPACE_UPDATED(String(workspace._id)), { workspaceUpdated: workspace });
 
   return workspace;
 }
@@ -646,6 +651,7 @@ const resolvers = {
       if (!task) {
         throw new Error('Task not found');
       }
+      pubsub.publish(EVENTS.TASK_CHANGED(String(task.project._id)), { taskChanged: task });
       return task;
     },
 
@@ -669,7 +675,9 @@ const resolvers = {
       if (existing) existing.accessLevel = args.input.accessLevel;
       else project.members.push({ user: parseId(args.input.userId), accessLevel: args.input.accessLevel });
       await project.save();
-      return project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+      const populated = await project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+      pubsub.publish(EVENTS.PROJECT_UPDATED(String(populated._id)), { projectUpdated: populated });
+      return populated;
     },
 
     updateProjectMemberAccess: async (_parent, args, context) => {
@@ -683,7 +691,9 @@ const resolvers = {
       if (!member) throw new Error('Project member not found');
       member.accessLevel = args.input.accessLevel;
       await project.save();
-      return project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+      const populated = await project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+      pubsub.publish(EVENTS.PROJECT_UPDATED(String(populated._id)), { projectUpdated: populated });
+      return populated;
     },
 
     removeProjectMember: async (_parent, args, context) => {
@@ -696,7 +706,9 @@ const resolvers = {
       if (String(args.userId) === String(project.createdBy)) throw new Error('Project creator cannot be removed');
       project.members = project.members.filter((entry) => String(entry.user) !== String(args.userId));
       await project.save();
-      return project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+      const populated = await project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+      pubsub.publish(EVENTS.PROJECT_UPDATED(String(populated._id)), { projectUpdated: populated });
+      return populated;
     },
 
     createTeam: async (_parent, args, context) => {
@@ -793,6 +805,8 @@ const resolvers = {
         });
       }
 
+      pubsub.publish(EVENTS.TASK_CHANGED(String(project._id)), { taskChanged: task });
+
       return task;
     },
 
@@ -850,6 +864,8 @@ const resolvers = {
         });
       }
 
+      pubsub.publish(EVENTS.TASK_CHANGED(String(task.project)), { taskChanged: task });
+
       return task;
     },
 
@@ -896,6 +912,8 @@ const resolvers = {
         referenceId: comment._id,
       });
 
+      pubsub.publish(EVENTS.COMMENT_ADDED(String(task._id)), { commentAdded: comment });
+
       return comment;
     },
 
@@ -922,6 +940,66 @@ const resolvers = {
         { $set: { readAt: new Date() } }
       );
       return true;
+    },
+  },
+
+  Subscription: {
+    taskChanged: {
+      subscribe: async (_parent, args, context) => {
+        const user = assertAuthenticated(context);
+        const project = await Project.findById(parseId(args.projectId));
+        if (!project) {
+          throw new Error('Project not found');
+        }
+        const workspace = await Workspace.findById(project.workspace);
+        assertWorkspaceAccess(workspace, user._id);
+        return pubsub.asyncIterableIterator(EVENTS.TASK_CHANGED(String(project._id)));
+      },
+    },
+
+    commentAdded: {
+      subscribe: async (_parent, args, context) => {
+        const user = assertAuthenticated(context);
+        const task = await Task.findById(parseId(args.taskId));
+        if (!task) {
+          throw new Error('Task not found');
+        }
+        const workspace = await Workspace.findById(task.workspace);
+        assertWorkspaceAccess(workspace, user._id);
+        return pubsub.asyncIterableIterator(EVENTS.COMMENT_ADDED(String(task._id)));
+      },
+    },
+
+    notificationAdded: {
+      subscribe: (_parent, _args, context) => {
+        const user = assertAuthenticated(context);
+        return pubsub.asyncIterableIterator(EVENTS.NOTIFICATION_ADDED(String(user._id)));
+      },
+    },
+
+    workspaceUpdated: {
+      subscribe: async (_parent, args, context) => {
+        const user = assertAuthenticated(context);
+        const workspace = await Workspace.findById(parseId(args.workspaceId));
+        if (!workspace) {
+          throw new Error('Workspace not found');
+        }
+        assertWorkspaceAccess(workspace, user._id);
+        return pubsub.asyncIterableIterator(EVENTS.WORKSPACE_UPDATED(String(workspace._id)));
+      },
+    },
+
+    projectUpdated: {
+      subscribe: async (_parent, args, context) => {
+        const user = assertAuthenticated(context);
+        const project = await Project.findById(parseId(args.projectId));
+        if (!project) {
+          throw new Error('Project not found');
+        }
+        const workspace = await Workspace.findById(project.workspace);
+        assertWorkspaceAccess(workspace, user._id);
+        return pubsub.asyncIterableIterator(EVENTS.PROJECT_UPDATED(String(project._id)));
+      },
     },
   },
 

@@ -405,3 +405,43 @@ export const ADD_COMMENT = gql`
     }
   }
 `;
+
+export const TASK_CHANGED_SUBSCRIPTION = gql`
+  subscription TaskChanged($projectId: ID!) {
+    taskChanged(projectId: $projectId) {
+      id
+    }
+  }
+`;
+
+export const COMMENT_ADDED_SUBSCRIPTION = gql`
+  subscription CommentAdded($taskId: ID!) {
+    commentAdded(taskId: $taskId) {
+      id
+    }
+  }
+`;
+
+export const NOTIFICATION_ADDED_SUBSCRIPTION = gql`
+  subscription NotificationAdded {
+    notificationAdded {
+      id
+    }
+  }
+`;
+
+export const WORKSPACE_UPDATED_SUBSCRIPTION = gql`
+  subscription WorkspaceUpdated($workspaceId: ID!) {
+    workspaceUpdated(workspaceId: $workspaceId) {
+      id
+    }
+  }
+`;
+
+export const PROJECT_UPDATED_SUBSCRIPTION = gql`
+  subscription ProjectUpdated($projectId: ID!) {
+    projectUpdated(projectId: $projectId) {
+      id
+    }
+  }
+`;
