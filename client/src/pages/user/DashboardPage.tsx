@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useSubscription } from '@apollo/client/react';
 import React from 'react';
 import dayjs from 'dayjs';
-import { X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   ADD_WORKSPACE_MEMBER,
@@ -103,12 +103,12 @@ export function DashboardPage() {
     useMutation<AddWorkspaceMemberResult>(ADD_WORKSPACE_MEMBER);
   const [updateWorkspaceMemberRole] = useMutation<AddWorkspaceMemberResult>(ADD_WORKSPACE_MEMBER);
   const [removeWorkspaceMember] = useMutation(REMOVE_WORKSPACE_MEMBER);
-  const [memberUserId, setMemberUserId] = React.useState('');
-  const [memberRole, setMemberRole] = React.useState<'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'>('MEMBER');
   const [showCreateWorkspace, setShowCreateWorkspace] = React.useState(false);
   const [workspaceFormError, setWorkspaceFormError] = React.useState('');
   const [showCreateProject, setShowCreateProject] = React.useState(false);
   const [projectFormError, setProjectFormError] = React.useState('');
+  const [showAddMember, setShowAddMember] = React.useState(false);
+  const [addMemberFormError, setAddMemberFormError] = React.useState('');
 
   // Use selected workspace or fall back to first
   const activeWorkspace = workspaceData?.workspaces?.find((w) => w.id === selectedWorkspaceId) ??
@@ -143,16 +143,6 @@ export function DashboardPage() {
       setSelectedWorkspaceId(activeWorkspace.id);
     }
   }, [activeWorkspace, selectedWorkspaceId, setSelectedWorkspaceId]);
-
-  React.useEffect(() => {
-    if (!canManageMembers) {
-      return;
-    }
-
-    if (!memberUserId && memberOptions.length > 0) {
-      setMemberUserId(memberOptions[0].id);
-    }
-  }, [canManageMembers, memberOptions, memberUserId]);
 
   const {
     data: dashboardData,
@@ -275,33 +265,54 @@ export function DashboardPage() {
     }
   }
 
-  async function handleAddWorkspaceMember() {
+  function openAddMemberModal() {
     if (!activeWorkspace || !canManageMembers) {
       showToast('Only the workspace creator can add members.', 'error');
       return;
     }
 
-    const targetUser = (usersData?.users.nodes ?? []).find((candidate) => candidate.id === memberUserId);
+    setAddMemberFormError('');
+    setShowAddMember(true);
+  }
 
-    if (!targetUser) {
-      showToast('Select a user to add.', 'error');
+  async function handleAddWorkspaceMember(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeWorkspace) {
       return;
     }
 
-    await addWorkspaceMember({
-      variables: {
-        input: {
-          workspaceId: activeWorkspace.id,
-          userId: targetUser.id,
-          role: memberRole,
-        },
-      },
-    });
+    setAddMemberFormError('');
+    const form = new FormData(event.currentTarget);
+    const userId = String(form.get('userId') ?? '');
+    const role = String(form.get('role') ?? 'MEMBER') as 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
+    const targetUser = (usersData?.users.nodes ?? []).find((candidate) => candidate.id === userId);
 
-    await Promise.all([refetch(), refetchUsers()]);
-    setMemberUserId('');
-    setMemberRole('MEMBER');
-    showToast(`${targetUser.name} added as ${memberRole}.`, 'success');
+    if (!targetUser) {
+      setAddMemberFormError('Select a user to add.');
+      return;
+    }
+
+    try {
+      await addWorkspaceMember({
+        variables: {
+          input: {
+            workspaceId: activeWorkspace.id,
+            userId: targetUser.id,
+            role,
+          },
+        },
+      });
+
+      await Promise.all([refetch(), refetchUsers()]);
+      setShowAddMember(false);
+      showToast(`${targetUser.name} added as ${role}.`, 'success');
+    } catch (addError) {
+      setAddMemberFormError(
+        addError instanceof Error
+          ? addError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to add member.'
+      );
+    }
   }
 
   async function handleWorkspaceMemberRoleChange(
@@ -419,128 +430,17 @@ export function DashboardPage() {
               {createWorkspaceLoading ? 'Creating...' : 'New workspace'}
             </button>
           ) : null}
-          {canManageMembers ? (
-            <button
-              type="button"
-              onClick={() => void handleAddWorkspaceMember()}
-              disabled={addWorkspaceMemberLoading}
-              className="rounded-xl border border-ink/20 px-4 py-2 text-sm hover:bg-ink/5 disabled:opacity-70"
-            >
-              {addWorkspaceMemberLoading ? 'Adding...' : 'Add member'}
-            </button>
-          ) : null}
         </div>
       </div>
 
       {canManageMembers ? (
-        <article className="rounded-2xl border border-ink/10 bg-white p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="text-lg font-semibold">Workspace Members</h3>
-              <p className="text-sm text-ink/70">Only the workspace creator can add members.</p>
-            </div>
-            <span className="rounded-full bg-sand px-3 py-1 text-xs text-ink/70">
-              Creator: {activeWorkspace?.owner?.id === user?.id ? 'Yes' : 'No'}
-            </span>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <form
-              className="space-y-3 rounded-xl border border-ink/10 bg-sand/30 p-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleAddWorkspaceMember();
-              }}
-            >
-              <label className="block text-sm font-medium text-ink">Add member</label>
-              <select
-                aria-label="Member to add"
-                value={memberUserId}
-                onChange={(event) => setMemberUserId(event.target.value)}
-                className="w-full rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Select a user</option>
-                {memberOptions.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.name} · {candidate.email}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                aria-label="Member role"
-                value={memberRole}
-                onChange={(event) => setMemberRole(event.target.value as typeof memberRole)}
-                className="w-full rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm"
-              >
-                {workspaceRoles.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                type="submit"
-                disabled={addWorkspaceMemberLoading || !memberUserId}
-                className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
-              >
-                {addWorkspaceMemberLoading ? 'Adding...' : 'Add member'}
-              </button>
-            </form>
-
-            <div className="rounded-xl border border-ink/10 bg-sand/20 p-4">
-              <p className="text-sm font-medium text-ink">Current members</p>
-              <p className="text-xs text-ink/60">Change a member's access level or remove them from the workspace.</p>
-              <ul className="mt-3 space-y-2 text-sm">
-                {activeWorkspace?.members.map((member) => {
-                  const isOwner = activeWorkspace.owner.id === member.user.id;
-                  return (
-                    <li key={member.user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
-                      <div>
-                        <p className="font-medium">{member.user.name}</p>
-                        <p className="text-xs text-ink/60">{member.user.email}</p>
-                      </div>
-                      {isOwner ? (
-                        <span className="rounded-full bg-ink px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-mist">
-                          Owner
-                        </span>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <select
-                            aria-label={`${member.user.name}'s role`}
-                            value={member.role}
-                            onChange={(event) =>
-                              void handleWorkspaceMemberRoleChange(
-                                member.user.id,
-                                member.user.name,
-                                event.target.value as typeof member.role
-                              )
-                            }
-                            className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"
-                          >
-                            {workspaceRoles.map((role) => (
-                              <option key={role} value={role}>
-                                {role}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => void handleRemoveWorkspaceMember(member.user.id, member.user.name)}
-                            className="rounded-lg border border-ember/30 px-2 py-1.5 text-xs text-ember"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </div>
-        </article>
+        <WorkspaceMembersPanel
+          members={activeWorkspace?.members ?? []}
+          ownerId={activeWorkspace?.owner.id}
+          onAddMember={openAddMemberModal}
+          onRoleChange={handleWorkspaceMemberRoleChange}
+          onRemove={handleRemoveWorkspaceMember}
+        />
       ) : null}
 
       {dashboardLoading ? (
@@ -643,7 +543,184 @@ export function DashboardPage() {
           onSubmit={handleCreateWorkspace}
         />
       ) : null}
+
+      {showAddMember ? (
+        <AddWorkspaceMemberModal
+          error={addMemberFormError}
+          loading={addWorkspaceMemberLoading}
+          memberOptions={memberOptions}
+          onClose={() => setShowAddMember(false)}
+          onSubmit={handleAddWorkspaceMember}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function WorkspaceMembersPanel({
+  members,
+  ownerId,
+  onAddMember,
+  onRoleChange,
+  onRemove,
+}: {
+  members: Workspace['members'];
+  ownerId?: string;
+  onAddMember: () => void;
+  onRoleChange: (memberId: string, memberName: string, role: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER') => void;
+  onRemove: (memberId: string, memberName: string) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-white/80 bg-white/85 p-5 shadow-float">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold">Workspace members</h3>
+          <p className="text-sm text-ink/60">Manage roles and access for this workspace.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onAddMember}
+          className="inline-flex items-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm text-mist"
+        >
+          <Plus size={15} /> Add member
+        </button>
+      </div>
+      <div className="max-h-80 overflow-y-auto overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="sticky top-0 z-10 border-b border-ink/10 bg-white text-xs uppercase text-ink/50">
+            <tr><th className="p-3">Member</th><th className="p-3">Role</th><th className="p-3">Action</th></tr>
+          </thead>
+          <tbody>
+            {members.map((member) => {
+              const isOwner = ownerId === member.user.id;
+              return (
+                <tr key={member.user.id} className="border-b border-ink/5">
+                  <td className="p-3">
+                    <strong>{member.user.name}</strong>
+                    <p className="text-xs text-ink/50">{member.user.email}</p>
+                  </td>
+                  <td className="p-3">
+                    {isOwner ? (
+                      <span className="rounded-full bg-ink px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-mist">
+                        Owner
+                      </span>
+                    ) : (
+                      <select
+                        aria-label={`${member.user.name}'s role`}
+                        value={member.role}
+                        onChange={(event) =>
+                          onRoleChange(member.user.id, member.user.name, event.target.value as typeof member.role)
+                        }
+                        className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"
+                      >
+                        {workspaceRoles.map((role) => (
+                          <option key={role} value={role}>
+                            {role}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    {isOwner ? (
+                      <span className="text-xs text-ink/40">—</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onRemove(member.user.id, member.user.name)}
+                        className="rounded-lg border border-ember/30 px-3 py-1.5 text-xs text-ember"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function AddWorkspaceMemberModal({
+  error,
+  loading,
+  memberOptions,
+  onClose,
+  onSubmit,
+}: {
+  error: string;
+  loading: boolean;
+  memberOptions: Array<{ id: string; name: string; email: string }>;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-20 grid place-items-center bg-ink/30 p-4">
+      <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-float">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Add member</h2>
+          <button type="button" onClick={onClose} title="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        {error ? <p className="rounded-lg bg-ember/10 px-3 py-2 text-sm text-ember">{error}</p> : null}
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">User</span>
+          <select
+            name="userId"
+            required
+            defaultValue=""
+            className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm outline-none focus:border-aqua"
+          >
+            <option value="" disabled>
+              Select a user
+            </option>
+            {memberOptions.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.name} · {candidate.email}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">Role</span>
+          <select
+            name="role"
+            defaultValue="MEMBER"
+            className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm outline-none focus:border-aqua"
+          >
+            {workspaceRoles.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {memberOptions.length === 0 ? (
+          <p className="text-xs text-ink/50">Every active user is already a member of this workspace.</p>
+        ) : null}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="rounded-xl border border-ink/10 px-4 py-2 text-sm">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading || memberOptions.length === 0}
+            className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
+          >
+            {loading ? 'Adding...' : 'Add member'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
