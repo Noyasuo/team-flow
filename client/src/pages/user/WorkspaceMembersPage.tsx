@@ -1,10 +1,11 @@
 import { useMutation, useQuery } from '@apollo/client/react';
-import { ArrowLeft, UserPlus, X } from 'lucide-react';
+import { ArrowLeft, Trash2, UserPlus, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ADD_WORKSPACE_MEMBER, USERS, WORKSPACES } from '../../lib/graphql';
+import { ADD_WORKSPACE_MEMBER, REMOVE_WORKSPACE_MEMBER, USERS, WORKSPACES } from '../../lib/graphql';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 
 type Workspace = {
   id: string;
@@ -24,11 +25,13 @@ type UsersResult = {
 
 export function WorkspaceMembersPage() {
   const { selectedWorkspaceId } = useWorkspaceContext();
+  const { user } = useAuth();
   const { showToast } = useToast();
   const { data, loading, refetch } = useQuery<{ workspaces: Workspace[] }>(WORKSPACES);
   const [showAddMember, setShowAddMember] = useState(false);
   const [formError, setFormError] = useState('');
   const [addWorkspaceMember, { loading: addLoading }] = useMutation(ADD_WORKSPACE_MEMBER);
+  const [removeWorkspaceMember] = useMutation(REMOVE_WORKSPACE_MEMBER);
   const { data: usersData } = useQuery<UsersResult>(USERS, {
     variables: { page: 1, limit: 200 },
   });
@@ -39,6 +42,30 @@ export function WorkspaceMembersPage() {
   const memberOptions = (usersData?.users.nodes ?? []).filter(
     (candidate) => !activeWorkspace?.members.some((member) => member.user.id === candidate.id)
   );
+
+  const canManageMembers = Boolean(
+    activeWorkspace &&
+      (user?.role === 'ADMIN' ||
+        activeWorkspace.owner.id === user?.id ||
+        ['ADMIN', 'MANAGER'].includes(
+          activeWorkspace.members.find((member) => member.user.id === user?.id)?.role ?? ''
+        ))
+  );
+
+  async function handleRemoveMember(memberId: string, memberName: string) {
+    if (!activeWorkspace || memberId === activeWorkspace.owner.id) return;
+    if (!window.confirm(`Remove ${memberName} from ${activeWorkspace.name}?`)) return;
+
+    try {
+      await removeWorkspaceMember({
+        variables: { workspaceId: activeWorkspace.id, userId: memberId },
+      });
+      await refetch();
+      showToast(`${memberName} was removed from the workspace.`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message.replace(/^GraphQL error:\s*/i, '') : 'Unable to remove member.', 'error');
+    }
+  }
 
   async function handleAddMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -103,16 +130,18 @@ export function WorkspaceMembersPage() {
           <h3 className="text-xl font-semibold">Members</h3>
           <p className="text-sm text-ink/60">Manage access for this workspace.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setFormError('');
-            setShowAddMember(true);
-          }}
-          className="inline-flex items-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm text-mist"
-        >
-          <UserPlus size={15} /> Add member
-        </button>
+        {canManageMembers ? (
+          <button
+            type="button"
+            onClick={() => {
+              setFormError('');
+              setShowAddMember(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm text-mist"
+          >
+            <UserPlus size={15} /> Add member
+          </button>
+        ) : null}
       </div>
 
       <div className="space-y-3">
@@ -122,9 +151,22 @@ export function WorkspaceMembersPage() {
               <p className="font-medium">{member.user.name}</p>
               <p className="text-sm text-ink/60">{member.user.email}</p>
             </div>
-            <span className="rounded-full bg-ink/5 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-ink/80">
-              {accessLabel(member.role)}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-ink/5 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-ink/80">
+                {accessLabel(member.role)}
+              </span>
+              {canManageMembers && member.user.id !== activeWorkspace.owner.id ? (
+                <button
+                  type="button"
+                  onClick={() => void handleRemoveMember(member.user.id, member.user.name)}
+                  title="Remove member"
+                  aria-label={`Remove ${member.user.name}`}
+                  className="rounded-lg border border-ember/30 p-2 text-ember hover:bg-ember/10"
+                >
+                  <Trash2 size={14} />
+                </button>
+              ) : null}
+            </div>
           </div>
         ))}
       </div>

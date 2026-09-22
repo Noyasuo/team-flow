@@ -146,7 +146,7 @@ async function addWorkspaceMemberResolver(_parent, args, context) {
     throw new Error('Workspace not found');
   }
 
-  assertWorkspaceRole(workspace, user._id, ['ADMIN'], user.role);
+  assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER'], user.role);
 
   const targetUser = await User.findById(memberId);
   if (!targetUser) {
@@ -197,7 +197,7 @@ async function removeWorkspaceMemberResolver(_parent, args, context) {
     throw new Error('Workspace not found');
   }
 
-  assertWorkspaceRole(workspace, user._id, ['ADMIN'], user.role);
+  assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER'], user.role);
 
   if (String(workspace.owner) === String(memberId)) {
     throw new Error('Workspace owner cannot be removed');
