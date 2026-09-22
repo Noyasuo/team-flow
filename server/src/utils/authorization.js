@@ -6,8 +6,12 @@ function assertAuthenticated(context) {
   return context.user;
 }
 
-function getWorkspaceRole(workspace, userId) {
+function getWorkspaceRole(workspace, userId, userRole = null) {
   const id = String(userId);
+
+  if (userRole === 'ADMIN') {
+    return 'ADMIN';
+  }
 
   if (String(workspace.owner) === id) {
     return 'ADMIN';
@@ -17,16 +21,16 @@ function getWorkspaceRole(workspace, userId) {
   return member ? member.role : null;
 }
 
-function assertWorkspaceAccess(workspace, userId) {
-  const role = getWorkspaceRole(workspace, userId);
+function assertWorkspaceAccess(workspace, userId, userRole = null) {
+  const role = getWorkspaceRole(workspace, userId, userRole);
   if (!role) {
     throw new Error('You do not have access to this workspace');
   }
   return role;
 }
 
-function assertWorkspaceRole(workspace, userId, allowedRoles) {
-  const role = assertWorkspaceAccess(workspace, userId);
+function assertWorkspaceRole(workspace, userId, allowedRoles, userRole = null) {
+  const role = assertWorkspaceAccess(workspace, userId, userRole);
 
   if (!allowedRoles.includes(role)) {
     throw new Error('You do not have permission for this action');
@@ -35,14 +39,18 @@ function assertWorkspaceRole(workspace, userId, allowedRoles) {
   return role;
 }
 
-function getProjectAccessLevel(project, userId) {
+function getProjectAccessLevel(project, userId, userRole = null) {
+  if (userRole === 'ADMIN') {
+    return 'EDIT';
+  }
+
   if (String(project.createdBy) === String(userId)) return 'EDIT';
   const member = (project.members || []).find((entry) => String(entry.user) === String(userId));
   return member ? member.accessLevel : null;
 }
 
-function assertProjectAccess(project, userId, minimumLevel) {
-  const accessLevel = getProjectAccessLevel(project, userId);
+function assertProjectAccess(project, userId, minimumLevel, userRole = null) {
+  const accessLevel = getProjectAccessLevel(project, userId, userRole);
   const levels = { VIEW: 0, EDIT: 1 };
   if (!accessLevel || levels[accessLevel] < levels[minimumLevel]) {
     throw new Error(`${minimumLevel} project access required`);

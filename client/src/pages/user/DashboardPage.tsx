@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useSubscription } from '@apollo/client/react';
 import React from 'react';
 import dayjs from 'dayjs';
-import { Users, X } from 'lucide-react';
+import { Building2, Users, X } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ADD_WORKSPACE_MEMBER,
@@ -355,7 +355,7 @@ export function DashboardPage() {
             disabled={createWorkspaceLoading}
             className="inline-flex items-center gap-2 rounded-xl border border-ink/20 px-4 py-2 text-sm hover:bg-ink/5 disabled:opacity-70"
           >
-            <Users size={15} />
+            <Building2 size={15} />
             {createWorkspaceLoading ? 'Creating...' : 'New workspace'}
           </button>
         ) : null}

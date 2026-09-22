@@ -1,8 +1,10 @@
-import { useQuery } from '@apollo/client/react';
-import { ArrowLeft, UserPlus } from 'lucide-react';
+import { useMutation, useQuery } from '@apollo/client/react';
+import { ArrowLeft, UserPlus, X } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { WORKSPACES } from '../../lib/graphql';
+import { ADD_WORKSPACE_MEMBER, USERS, WORKSPACES } from '../../lib/graphql';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useToast } from '../../context/ToastContext';
 
 type Workspace = {
   id: string;
@@ -14,12 +16,55 @@ type Workspace = {
   }>;
 };
 
+type UsersResult = {
+  users: {
+    nodes: Array<{ id: string; name: string; email: string }>;
+  };
+};
+
 export function WorkspaceMembersPage() {
   const { selectedWorkspaceId } = useWorkspaceContext();
-  const { data, loading } = useQuery<{ workspaces: Workspace[] }>(WORKSPACES);
+  const { showToast } = useToast();
+  const { data, loading, refetch } = useQuery<{ workspaces: Workspace[] }>(WORKSPACES);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [addWorkspaceMember, { loading: addLoading }] = useMutation(ADD_WORKSPACE_MEMBER);
+  const { data: usersData } = useQuery<UsersResult>(USERS, {
+    variables: { page: 1, limit: 200 },
+  });
 
   const activeWorkspace =
     data?.workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? data?.workspaces[0] ?? null;
+
+  const memberOptions = (usersData?.users.nodes ?? []).filter(
+    (candidate) => !activeWorkspace?.members.some((member) => member.user.id === candidate.id)
+  );
+
+  async function handleAddMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeWorkspace) return;
+
+    const userId = String(new FormData(event.currentTarget).get('userId') ?? '');
+    if (!userId) {
+      setFormError('Select a user to add.');
+      return;
+    }
+
+    try {
+      await addWorkspaceMember({
+        variables: {
+          input: { workspaceId: activeWorkspace.id, userId, role: 'MEMBER' },
+        },
+      });
+      await refetch();
+      setShowAddMember(false);
+      setFormError('');
+      const addedUser = usersData?.users.nodes.find((candidate) => candidate.id === userId);
+      showToast(`${addedUser?.name ?? 'Member'} added to the workspace.`, 'success');
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message.replace(/^GraphQL error:\s*/i, '') : 'Unable to add member.');
+    }
+  }
 
   function accessLabel(role: Workspace['members'][number]['role']) {
     return ['ADMIN', 'MANAGER', 'MEMBER'].includes(role) ? 'EDIT' : 'VIEW';
@@ -58,7 +103,14 @@ export function WorkspaceMembersPage() {
           <h3 className="text-xl font-semibold">Members</h3>
           <p className="text-sm text-ink/60">Manage access for this workspace.</p>
         </div>
-        <button type="button" className="inline-flex items-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm text-mist">
+        <button
+          type="button"
+          onClick={() => {
+            setFormError('');
+            setShowAddMember(true);
+          }}
+          className="inline-flex items-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm text-mist"
+        >
           <UserPlus size={15} /> Add member
         </button>
       </div>
@@ -76,6 +128,34 @@ export function WorkspaceMembersPage() {
           </div>
         ))}
       </div>
+
+      {showAddMember ? (
+        <div className="fixed inset-0 z-20 grid place-items-center bg-ink/30 p-4">
+          <form onSubmit={handleAddMember} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-float">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Add member</h2>
+              <button type="button" onClick={() => setShowAddMember(false)} title="Close" aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            {formError ? <p className="rounded-lg bg-ember/10 px-3 py-2 text-sm text-ember">{formError}</p> : null}
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">User</span>
+              <select name="userId" required defaultValue="" className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm outline-none focus:border-aqua">
+                <option value="" disabled>Select a user</option>
+                {memberOptions.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.email}</option>)}
+              </select>
+            </label>
+            {memberOptions.length === 0 ? <p className="text-xs text-ink/50">Every active user is already a member of this workspace.</p> : null}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setShowAddMember(false)} className="rounded-xl border border-ink/10 px-4 py-2 text-sm">Cancel</button>
+              <button type="submit" disabled={addLoading || memberOptions.length === 0} className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70">
+                {addLoading ? 'Adding...' : 'Add member'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }

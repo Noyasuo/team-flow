@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@apollo/client/react';
-import { LayoutDashboard, LogOut, Plus, ShieldCheck, Users, Workflow, X } from 'lucide-react';
+import { LayoutDashboard, LogOut, Pencil, Plus, ShieldCheck, Trash2, Users, Workflow, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -9,10 +9,16 @@ import {
   CHANGE_ADMIN_USER_PASSWORD,
   CREATE_ADMIN_USER,
   DELETE_ADMIN_USER,
+  DELETE_PROJECT,
+  DELETE_TASK,
+  DELETE_WORKSPACE,
   RESET_ADMIN_USER_PASSWORD,
   SET_ADMIN_TASK_STATUS,
   SET_USER_ACTIVE,
   UPDATE_ADMIN_USER,
+  UPDATE_PROJECT,
+  UPDATE_TASK,
+  UPDATE_WORKSPACE,
 } from '../../lib/graphql';
 
 type AdminStats = {
@@ -85,6 +91,12 @@ export function AdminDashboardPage() {
   const [resetPassword] = useMutation(RESET_ADMIN_USER_PASSWORD);
   const [changePassword] = useMutation(CHANGE_ADMIN_USER_PASSWORD);
   const [deleteUser, { loading: deleteUserLoading }] = useMutation(DELETE_ADMIN_USER);
+  const [updateWorkspace] = useMutation(UPDATE_WORKSPACE);
+  const [deleteWorkspace] = useMutation(DELETE_WORKSPACE);
+  const [updateProject] = useMutation(UPDATE_PROJECT);
+  const [updateTaskDetails] = useMutation(UPDATE_TASK);
+  const [deleteProject] = useMutation(DELETE_PROJECT);
+  const [deleteTask] = useMutation(DELETE_TASK);
   const stats = statsData?.adminStats;
 
   async function toggleUser(id: string, isActive: boolean) {
@@ -95,6 +107,75 @@ export function AdminDashboardPage() {
   async function updateTask(id: string, status: string) {
     await setTaskStatus({ variables: { taskId: id, status } });
     await refetch();
+  }
+
+  async function editWorkspace(item: OperationsResult['adminWorkspaces'][number]) {
+    const name = window.prompt('Workspace name', item.name)?.trim();
+    if (!name || name === item.name) return;
+    try {
+      await updateWorkspace({ variables: { input: { id: item.id, name } } });
+      showToast('Workspace updated.', 'success');
+      await refetch();
+    } catch (updateError) {
+      showToast(getGraphqlErrorMessage(updateError), 'error');
+    }
+  }
+
+  async function removeWorkspace(item: OperationsResult['adminWorkspaces'][number]) {
+    if (!window.confirm(`Delete workspace "${item.name}" and all its projects and tasks?`)) return;
+    try {
+      await deleteWorkspace({ variables: { id: item.id } });
+      showToast('Workspace deleted.', 'success');
+      await refetch();
+    } catch (deleteError) {
+      showToast(getGraphqlErrorMessage(deleteError), 'error');
+    }
+  }
+
+  async function editProject(item: OperationsResult['adminProjects'][number]) {
+    const name = window.prompt('Project name', item.name)?.trim();
+    if (!name || name === item.name) return;
+    try {
+      await updateProject({ variables: { input: { id: item.id, name } } });
+      showToast('Project updated.', 'success');
+      await refetch();
+    } catch (updateError) {
+      showToast(getGraphqlErrorMessage(updateError), 'error');
+    }
+  }
+
+  async function removeProject(item: OperationsResult['adminProjects'][number]) {
+    if (!window.confirm(`Delete project "${item.name}" and all its tasks?`)) return;
+    try {
+      await deleteProject({ variables: { id: item.id } });
+      showToast('Project deleted.', 'success');
+      await refetch();
+    } catch (deleteError) {
+      showToast(getGraphqlErrorMessage(deleteError), 'error');
+    }
+  }
+
+  async function removeTask(item: OperationsResult['adminTasks'][number]) {
+    if (!window.confirm(`Delete task "${item.title}"?`)) return;
+    try {
+      await deleteTask({ variables: { id: item.id } });
+      showToast('Task deleted.', 'success');
+      await refetch();
+    } catch (deleteError) {
+      showToast(getGraphqlErrorMessage(deleteError), 'error');
+    }
+  }
+
+  async function editTask(item: OperationsResult['adminTasks'][number]) {
+    const title = window.prompt('Task title', item.title)?.trim();
+    if (!title || title === item.title) return;
+    try {
+      await updateTaskDetails({ variables: { input: { id: item.id, title } } });
+      showToast('Task updated.', 'success');
+      await refetch();
+    } catch (updateError) {
+      showToast(getGraphqlErrorMessage(updateError), 'error');
+    }
   }
 
   async function handleDeleteUser() {
@@ -186,9 +267,9 @@ export function AdminDashboardPage() {
             onDelete={setDeletingUser}
           />
         ) : null}
-        {tab === 'workspaces' && data ? <ResourceTable title="Workspace directory" columns={['Workspace', 'Owner', 'Members', 'Created']} rows={data.adminWorkspaces.map((item) => [item.name, item.owner.name, item.members.length, new Date(item.createdAt).toLocaleDateString()])} /> : null}
-        {tab === 'projects' && data ? <ResourceTable title="Project directory" columns={['Project', 'Workspace', 'Owner', 'Status']} rows={data.adminProjects.map((item) => [item.name, item.workspace.name, item.createdBy.name, item.status])} /> : null}
-        {tab === 'tasks' && data ? <TasksPanel tasks={data.adminTasks} onStatusChange={updateTask} /> : null}
+        {tab === 'workspaces' && data ? <ResourceTable title="Workspace directory" columns={['Workspace', 'Owner', 'Members', 'Created']} rows={data.adminWorkspaces.map((item) => ({ values: [item.name, item.owner.name, item.members.length, new Date(item.createdAt).toLocaleDateString()], actions: <ResourceActions onEdit={() => void editWorkspace(item)} onDelete={() => void removeWorkspace(item)} /> }))} /> : null}
+        {tab === 'projects' && data ? <ResourceTable title="Project directory" columns={['Project', 'Workspace', 'Owner', 'Status']} rows={data.adminProjects.map((item) => ({ values: [item.name, item.workspace.name, item.createdBy.name, item.status], actions: <ResourceActions onEdit={() => void editProject(item)} onDelete={() => void removeProject(item)} /> }))} /> : null}
+        {tab === 'tasks' && data ? <TasksPanel tasks={data.adminTasks} onStatusChange={updateTask} onEdit={editTask} onDelete={removeTask} /> : null}
         {showCreateUser ? <CreateUserModal error={userFormError} onClose={() => { setUserFormError(''); setShowCreateUser(false); }} onSubmit={handleCreateUser} /> : null}
         {editingUser ? <EditUserModal serverError={userFormError} user={editingUser} onClose={() => { setUserFormError(''); setEditingUser(null); }} onSubmit={handleUpdateUser} onResetPassword={handleResetPassword} onChangePassword={handleChangePassword} /> : null}
         {deletingUser ? (
@@ -280,8 +361,8 @@ function UsersPanel({
   );
 }
 
-function TasksPanel({ tasks, onStatusChange }: { tasks: OperationsResult['adminTasks']; onStatusChange: (id: string, status: string) => void }) {
-  return <section className="rounded-2xl border border-white/80 bg-white/85 p-5 shadow-float"><h2 className="mb-4 text-lg font-semibold">Task operations</h2><div className="space-y-2">{tasks.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink/10 p-3"><div><strong>{item.title}</strong><p className="text-xs text-ink/50">{item.project.name} · {item.priority} · {item.assignee?.name ?? 'Unassigned'}</p></div><select value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)} className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"><option>TODO</option><option>IN_PROGRESS</option><option>REVIEW</option><option>DONE</option></select></div>)}</div></section>;
+function TasksPanel({ tasks, onStatusChange, onEdit, onDelete }: { tasks: OperationsResult['adminTasks']; onStatusChange: (id: string, status: string) => void; onEdit: (task: OperationsResult['adminTasks'][number]) => void; onDelete: (task: OperationsResult['adminTasks'][number]) => void }) {
+  return <section className="rounded-2xl border border-white/80 bg-white/85 p-5 shadow-float"><h2 className="mb-4 text-lg font-semibold">Task operations</h2><div className="space-y-2">{tasks.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink/10 p-3"><div><strong>{item.title}</strong><p className="text-xs text-ink/50">{item.project.name} · {item.priority} · {item.assignee?.name ?? 'Unassigned'}</p></div><div className="flex items-center gap-2"><select value={item.status} onChange={(event) => onStatusChange(item.id, event.target.value)} className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"><option>TODO</option><option>IN_PROGRESS</option><option>REVIEW</option><option>DONE</option></select><button type="button" onClick={() => onEdit(item)} title="Edit task" aria-label={`Edit ${item.title}`} className="rounded-lg bg-ink p-2 text-mist hover:bg-ink/80"><Pencil size={14} /></button><button type="button" onClick={() => onDelete(item)} title="Delete task" aria-label={`Delete ${item.title}`} className="rounded-lg border border-ember/30 p-2 text-ember hover:bg-ember/10"><Trash2 size={14} /></button></div></div>)}</div></section>;
 }
 
 function getGraphqlErrorMessage(error: unknown) {
@@ -382,6 +463,10 @@ function Field({ name, label, value, type = 'text', minLength, onChange }: { nam
   return <label className="block"><span className="mb-1 block text-sm font-medium">{label}</span><input name={name} type={type} defaultValue={onChange ? undefined : value} value={onChange ? value : undefined} onChange={onChange ? (event) => onChange(event.target.value) : undefined} required={!['title', 'password', 'passwordConfirmation', 'newPassword'].includes(name)} minLength={minLength} autoCapitalize={name === 'username' ? 'none' : undefined} autoCorrect={name === 'username' ? 'off' : undefined} spellCheck={name === 'username' ? false : undefined} className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm" /></label>;
 }
 
-function ResourceTable({ title, columns, rows }: { title: string; columns: string[]; rows: Array<Array<string | number>> }) {
-  return <section className="rounded-2xl border border-white/80 bg-white/85 p-5 shadow-float"><h2 className="mb-4 text-lg font-semibold">{title}</h2><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-ink/10 text-xs uppercase text-ink/50"><tr>{columns.map((column) => <th key={column} className="p-3">{column}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index} className="border-b border-ink/5">{row.map((value, cellIndex) => <td key={cellIndex} className="p-3">{value}</td>)}</tr>)}</tbody></table></div></section>;
+function ResourceActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  return <div className="flex gap-2"><button type="button" onClick={onEdit} title="Edit" aria-label="Edit" className="rounded-lg bg-ink p-2 text-mist hover:bg-ink/80"><Pencil size={14} /></button><button type="button" onClick={onDelete} title="Delete" aria-label="Delete" className="rounded-lg border border-ember/30 p-2 text-ember hover:bg-ember/10"><Trash2 size={14} /></button></div>;
+}
+
+function ResourceTable({ title, columns, rows }: { title: string; columns: string[]; rows: Array<{ values: Array<string | number>; actions: React.ReactNode }> }) {
+  return <section className="rounded-2xl border border-white/80 bg-white/85 p-5 shadow-float"><h2 className="mb-4 text-lg font-semibold">{title}</h2><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-ink/10 text-xs uppercase text-ink/50"><tr>{columns.map((column) => <th key={column} className="p-3">{column}</th>)}<th className="p-3">Actions</th></tr></thead><tbody>{rows.map((row, index) => <tr key={index} className="border-b border-ink/5">{row.values.map((value, cellIndex) => <td key={cellIndex} className="p-3">{value}</td>)}<td className="p-3">{row.actions}</td></tr>)}</tbody></table></div></section>;
 }

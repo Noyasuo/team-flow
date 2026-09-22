@@ -1,17 +1,14 @@
 import { useMutation, useQuery, useSubscription } from '@apollo/client/react';
 import dayjs from 'dayjs';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, UsersRound } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ADD_PROJECT_MEMBER,
   CREATE_TASK,
   PROJECT,
   PROJECT_UPDATED_SUBSCRIPTION,
-  REMOVE_PROJECT_MEMBER,
   TASK_CHANGED_SUBSCRIPTION,
   TASKS,
-  UPDATE_PROJECT_MEMBER_ACCESS,
   UPDATE_TASK,
   WORKSPACE_UPDATED_SUBSCRIPTION,
 } from '../../lib/graphql';
@@ -61,21 +58,12 @@ type ProjectResult = {
 
 const columns: Array<TaskNode['status']> = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'];
 
-function normalizeProjectAccessLevel(value?: string | null): 'VIEW' | 'EDIT' {
-  if (value === 'EDIT' || value === 'MANAGE') {
-    return 'EDIT';
-  }
-  return value === 'VIEW' ? 'VIEW' : 'VIEW';
-}
-
 export function KanbanPage() {
   const navigate = useNavigate();
   const { projectId } = useParams();
   const { user } = useAuth();
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
-  const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [selectedAccess, setSelectedAccess] = useState<'VIEW' | 'EDIT'>('VIEW');
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [taskFormError, setTaskFormError] = useState('');
 
@@ -96,9 +84,6 @@ export function KanbanPage() {
 
   const [createTask, { loading: createTaskLoading }] = useMutation(CREATE_TASK);
   const [updateTask] = useMutation(UPDATE_TASK);
-  const [addProjectMember] = useMutation(ADD_PROJECT_MEMBER);
-  const [updateProjectMemberAccess] = useMutation(UPDATE_PROJECT_MEMBER_ACCESS);
-  const [removeProjectMember] = useMutation(REMOVE_PROJECT_MEMBER);
 
   // Live updates: any task change, project-access change, or workspace-membership
   // change on this board refreshes the relevant query automatically - no manual refresh needed.
@@ -147,35 +132,6 @@ export function KanbanPage() {
     : isProjectCreator
       ? 'EDIT'
     : selectedProject?.workspace.members.find((member) => member.user.id === user?.id)?.role ?? null;
-  const projectMemberAccess = normalizeProjectAccessLevel(
-    selectedProject?.members.find((member) => member.user.id === user?.id)?.accessLevel ?? null
-  );
-  const workspaceRole = currentProjectRole ?? 'MEMBER';
-  // Workspace admins/managers and the project creator can manage project members.
-  const canManageProject = isProjectCreator || isWorkspaceOwner || ['ADMIN', 'MANAGER'].includes(workspaceRole) || projectMemberAccess === 'EDIT';
-  const availableMembers = selectedProject?.workspace.members.filter(
-    (member) => member.user.id !== selectedProject.createdBy.id && !selectedProject.members.some((projectMember) => projectMember.user.id === member.user.id)
-  ) ?? [];
-
-  async function handleAddProjectMember() {
-    if (!selectedMemberId || !projectId) return;
-    await addProjectMember({ variables: { input: { projectId, userId: selectedMemberId, accessLevel: selectedAccess } } });
-    await refetchProject();
-    setSelectedMemberId('');
-  }
-
-  async function handleProjectAccessChange(memberId: string, accessLevel: string) {
-    if (!projectId) return;
-    await updateProjectMemberAccess({ variables: { input: { projectId, userId: memberId, accessLevel } } });
-    await refetchProject();
-  }
-
-  async function handleRemoveProjectMember(memberId: string) {
-    if (!projectId) return;
-    await removeProjectMember({ variables: { projectId, userId: memberId } });
-    await refetchProject();
-  }
-
   function openCreateTaskModal() {
     if (!workspaceId) {
       showToast('Project workspace is still loading. Please try again in a moment.', 'error');
@@ -266,6 +222,14 @@ export function KanbanPage() {
             <ArrowLeft size={15} />
             Back to projects
           </Link>
+          <Link
+            to={`/projects/${projectId}/members`}
+            title="Project members"
+            aria-label="Project members"
+            className="inline-flex items-center justify-center rounded-xl border border-ink/10 px-3 py-2 text-sm hover:bg-ink hover:text-mist"
+          >
+            <UsersRound size={16} />
+          </Link>
           <input
             placeholder="Search tasks..."
             value={search}
@@ -289,39 +253,6 @@ export function KanbanPage() {
           </button>
         </div>
       </div>
-
-      {selectedProject ? (
-        <section className="rounded-2xl border border-ink/10 bg-white p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold">Project access</h3>
-              <p className="text-sm text-ink/60">Assign VIEW or EDIT access for this project.</p>
-            </div>
-            <span className="rounded-full bg-aqua/10 px-3 py-1 text-xs font-medium text-aqua">Your access: {currentProjectRole ?? 'VIEW'}</span>
-          </div>
-          <div className="mt-3 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink/10 p-3 text-sm">
-              <span><strong>{selectedProject.createdBy.name}</strong> <span className="text-ink/60">Project creator</span></span>
-              <span className="rounded-lg bg-ink/5 px-2 py-1 text-xs">EDIT</span>
-            </div>
-            {selectedProject.members.map((member) => (
-              <div key={member.user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink/10 p-3 text-sm">
-                <span><strong>{member.user.name}</strong> <span className="text-ink/60">{member.user.email}</span></span>
-                {canManageProject ? (
-                  <div className="flex items-center gap-2"><select value={normalizeProjectAccessLevel(member.accessLevel)} onChange={(event) => void handleProjectAccessChange(member.user.id, event.target.value)} className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"><option value="VIEW">VIEW</option><option value="EDIT">EDIT</option></select><button type="button" onClick={() => void handleRemoveProjectMember(member.user.id)} className="rounded-lg border border-ember/30 px-2 py-1.5 text-xs text-ember">Remove</button></div>
-                ) : <span className="rounded-lg bg-ink/5 px-2 py-1 text-xs">{normalizeProjectAccessLevel(member.accessLevel)}</span>}
-              </div>
-            ))}
-          </div>
-          {canManageProject && availableMembers.length > 0 ? (
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-ink/10 pt-4">
-              <select value={selectedMemberId} onChange={(event) => setSelectedMemberId(event.target.value)} className="rounded-lg border border-ink/10 bg-white px-2 py-2 text-sm"><option value="">Add workspace member...</option>{availableMembers.map((member) => <option key={member.user.id} value={member.user.id}>{member.user.name}</option>)}</select>
-              <select value={selectedAccess} onChange={(event) => setSelectedAccess(event.target.value as 'VIEW' | 'EDIT')} className="rounded-lg border border-ink/10 bg-white px-2 py-2 text-sm"><option>VIEW</option><option>EDIT</option></select>
-              <button type="button" onClick={() => void handleAddProjectMember()} className="rounded-lg bg-ink px-3 py-2 text-sm text-mist">Add access</button>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
 
       {loading ? (
         <p className="text-sm text-ink/70">Loading board...</p>

@@ -69,6 +69,18 @@ export const CREATE_WORKSPACE = gql`
   }
 `;
 
+export const UPDATE_WORKSPACE = gql`
+  mutation UpdateWorkspace($input: UpdateWorkspaceInput!) {
+    updateWorkspace(input: $input) { id name description }
+  }
+`;
+
+export const DELETE_WORKSPACE = gql`
+  mutation DeleteWorkspace($id: ID!) {
+    deleteWorkspace(id: $id)
+  }
+`;
+
 export const USERS = gql`
   query Users($page: Int, $limit: Int) {
     users(page: $page, limit: $limit) {
@@ -295,6 +307,18 @@ export const CREATE_PROJECT = gql`
   }
 `;
 
+export const UPDATE_PROJECT = gql`
+  mutation UpdateProject($input: UpdateProjectInput!) {
+    updateProject(input: $input) { id name status description }
+  }
+`;
+
+export const DELETE_PROJECT = gql`
+  mutation DeleteProject($id: ID!) {
+    deleteProject(id: $id)
+  }
+`;
+
 export const TASKS = gql`
   query Tasks(
     $projectId: ID!
@@ -389,6 +413,12 @@ export const UPDATE_TASK = gql`
         name
       }
     }
+  }
+`;
+
+export const DELETE_TASK = gql`
+  mutation DeleteTask($id: ID!) {
+    deleteTask(id: $id)
   }
 `;
 

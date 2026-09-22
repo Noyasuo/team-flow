@@ -295,6 +295,21 @@ const typeDefs = `#graphql
     assigneeId: ID
   }
 
+  input UpdateWorkspaceInput {
+    id: ID!
+    name: String
+    description: String
+  }
+
+  input UpdateProjectInput {
+    id: ID!
+    name: String
+    description: String
+    status: ProjectStatus
+    startDate: DateTime
+    dueDate: DateTime
+  }
+
   input AddCommentInput {
     taskId: ID!
     body: String!
@@ -347,6 +362,8 @@ const typeDefs = `#graphql
     setAdminTaskStatus(taskId: ID!, status: TaskStatus!): Task!
 
     createWorkspace(input: CreateWorkspaceInput!): Workspace!
+    updateWorkspace(input: UpdateWorkspaceInput!): Workspace!
+    deleteWorkspace(id: ID!): Boolean!
     addWorkspaceMember(input: AddWorkspaceMemberInput!): Workspace!
     removeWorkspaceMember(workspaceId: ID!, userId: ID!): Workspace!
     addProjectMember(input: AddProjectMemberInput!): Project!
@@ -356,9 +373,12 @@ const typeDefs = `#graphql
     inviteUser(input: AddWorkspaceMemberInput!): Team!
 
     createProject(input: CreateProjectInput!): Project!
+    updateProject(input: UpdateProjectInput!): Project!
+    deleteProject(id: ID!): Boolean!
 
     createTask(input: CreateTaskInput!): Task!
     updateTask(input: UpdateTaskInput!): Task!
+    deleteTask(id: ID!): Boolean!
 
     addComment(input: AddCommentInput!): Comment!
 

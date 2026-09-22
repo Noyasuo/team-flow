@@ -16,6 +16,8 @@ const {
   assertWorkspaceAccess,
   assertWorkspaceRole,
   assertProjectAccess,
+  getWorkspaceRole,
+  getProjectAccessLevel,
 } = require('../utils/authorization');
 const { normalizePagination, buildPageInfo } = require('../utils/pagination');
 const { createActivity, createNotifications } = require('../utils/activity');
@@ -63,9 +65,27 @@ async function getWorkspaceWithAccess(workspaceId, userId) {
     throw new Error('Workspace not found');
   }
 
-  assertWorkspaceAccess(workspace, userId);
+  const user = await User.findById(userId).select('role');
+  assertWorkspaceAccess(workspace, userId, user?.role || null);
 
   return workspace;
+}
+
+function canManageWorkspace(workspace, userId, userRole = null) {
+  if (userRole === 'ADMIN') {
+    return true;
+  }
+
+  return ['ADMIN', 'MANAGER'].includes(getWorkspaceRole(workspace, userId, userRole));
+}
+
+function canManageProject(project, userId, userRole = null) {
+  if (userRole === 'ADMIN') {
+    return true;
+  }
+
+  const projectAccessLevel = getProjectAccessLevel(project, userId, userRole);
+  return ['ADMIN', 'MANAGER'].includes(getWorkspaceRole(project.workspace, userId, userRole)) || projectAccessLevel === 'EDIT' || String(project.createdBy) === String(userId);
 }
 
 async function getTaskWithWorkspace(taskId) {
@@ -126,7 +146,7 @@ async function addWorkspaceMemberResolver(_parent, args, context) {
     throw new Error('Workspace not found');
   }
 
-  assertWorkspaceRole(workspace, user._id, ['ADMIN']);
+  assertWorkspaceRole(workspace, user._id, ['ADMIN'], user.role);
 
   const targetUser = await User.findById(memberId);
   if (!targetUser) {
@@ -177,7 +197,7 @@ async function removeWorkspaceMemberResolver(_parent, args, context) {
     throw new Error('Workspace not found');
   }
 
-  assertWorkspaceRole(workspace, user._id, ['ADMIN']);
+  assertWorkspaceRole(workspace, user._id, ['ADMIN'], user.role);
 
   if (String(workspace.owner) === String(memberId)) {
     throw new Error('Workspace owner cannot be removed');
@@ -252,10 +272,16 @@ const resolvers = {
     projects: async (_parent, args, context) => {
       const user = assertAuthenticated(context);
       const workspaceId = parseId(args.workspaceId);
-      await getWorkspaceWithAccess(workspaceId, user._id);
+      const workspace = await getWorkspaceWithAccess(workspaceId, user._id);
 
       const { page, limit, skip } = normalizePagination(args.page, args.limit);
-      const filter = { workspace: workspaceId };
+      const workspaceRole = getWorkspaceRole(workspace, user._id, user.role);
+      const filter = {
+        workspace: workspaceId,
+        ...(workspaceRole === 'ADMIN' || workspaceRole === 'MANAGER'
+          ? {}
+          : { $or: [{ members: { $elemMatch: { user: user._id } } }, { createdBy: user._id }] }),
+      };
 
       const [nodes, totalCount] = await Promise.all([
         Project.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
@@ -276,8 +302,11 @@ const resolvers = {
         return null;
       }
 
-      await getWorkspaceWithAccess(project.workspace, user._id);
-      if (project.members.length) assertProjectAccess(project, user._id, 'VIEW');
+      const workspace = await getWorkspaceWithAccess(project.workspace, user._id);
+      const workspaceRole = getWorkspaceRole(workspace, user._id, user.role);
+      if (workspaceRole !== 'ADMIN' && workspaceRole !== 'MANAGER' && String(project.createdBy) !== String(user._id)) {
+        assertProjectAccess(project, user._id, 'VIEW', user.role);
+      }
       return project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
     },
 
@@ -289,8 +318,11 @@ const resolvers = {
         throw new Error('Project not found');
       }
 
-      await getWorkspaceWithAccess(project.workspace, user._id);
-      if (project.members.length) assertProjectAccess(project, user._id, 'VIEW');
+      const workspace = await getWorkspaceWithAccess(project.workspace, user._id);
+      const workspaceRole = getWorkspaceRole(workspace, user._id, user.role);
+      if (workspaceRole !== 'ADMIN' && workspaceRole !== 'MANAGER' && String(project.createdBy) !== String(user._id)) {
+        assertProjectAccess(project, user._id, 'VIEW', user.role);
+      }
 
       const { page, limit, skip } = normalizePagination(args.page, args.limit);
       const filter = { project: project._id };
@@ -331,7 +363,17 @@ const resolvers = {
         return null;
       }
 
-      await getWorkspaceWithAccess(task.workspace, user._id);
+      const workspace = await getWorkspaceWithAccess(task.workspace, user._id);
+      const project = await Project.findById(task.project);
+      if (!project) {
+        return null;
+      }
+
+      const workspaceRole = getWorkspaceRole(workspace, user._id, user.role);
+      if (workspaceRole !== 'ADMIN' && workspaceRole !== 'MANAGER' && String(project.createdBy) !== String(user._id)) {
+        assertProjectAccess(project, user._id, 'VIEW', user.role);
+      }
+
       return task;
     },
 
@@ -377,7 +419,16 @@ const resolvers = {
     dashboard: async (_parent, args, context) => {
       const user = assertAuthenticated(context);
       const workspaceId = parseId(args.workspaceId);
-      await getWorkspaceWithAccess(workspaceId, user._id);
+      const workspace = await getWorkspaceWithAccess(workspaceId, user._id);
+      const workspaceRole = getWorkspaceRole(workspace, user._id, user.role);
+      const projectFilter = {
+        workspace: workspaceId,
+        ...(workspaceRole === 'ADMIN' || workspaceRole === 'MANAGER'
+          ? {}
+          : { $or: [{ members: { $elemMatch: { user: user._id } } }, { createdBy: user._id }] }),
+      };
+      const visibleProjectIds = await Project.find(projectFilter).distinct('_id');
+      const taskFilter = { workspace: workspaceId, project: { $in: visibleProjectIds } };
 
       const now = new Date();
       const sevenDaysAgo = new Date();
@@ -391,19 +442,19 @@ const resolvers = {
         priorityBuckets,
         completedTasksThisWeek,
       ] = await Promise.all([
-        Project.countDocuments({ workspace: workspaceId }),
-        Task.countDocuments({ workspace: workspaceId }),
-        Task.countDocuments({ workspace: workspaceId, dueDate: { $lt: now }, status: { $ne: 'DONE' } }),
+        Project.countDocuments(projectFilter),
+        Task.countDocuments(taskFilter),
+        Task.countDocuments({ ...taskFilter, dueDate: { $lt: now }, status: { $ne: 'DONE' } }),
         Task.aggregate([
-          { $match: { workspace: workspaceId } },
+          { $match: taskFilter },
           { $group: { _id: '$status', count: { $sum: 1 } } },
         ]),
         Task.aggregate([
-          { $match: { workspace: workspaceId } },
+          { $match: taskFilter },
           { $group: { _id: '$priority', count: { $sum: 1 } } },
         ]),
         Task.countDocuments({
-          workspace: workspaceId,
+          ...taskFilter,
           status: 'DONE',
           updatedAt: { $gte: sevenDaysAgo },
         }),
@@ -657,6 +708,46 @@ const resolvers = {
 
     createWorkspace: createWorkspaceResolver,
 
+    updateWorkspace: async (_parent, args, context) => {
+      const user = assertAdmin(context);
+      const workspace = await Workspace.findById(parseId(args.input.id));
+      if (!workspace) {
+        throw new Error('Workspace not found');
+      }
+
+      if (args.input.name !== undefined) {
+        const name = String(args.input.name || '').trim();
+        if (!name) {
+          throw new Error('Workspace name is required');
+        }
+        workspace.name = name;
+      }
+
+      if (args.input.description !== undefined) {
+        workspace.description = args.input.description || '';
+      }
+
+      await workspace.save();
+      pubsub.publish(EVENTS.WORKSPACE_UPDATED(String(workspace._id)), { workspaceUpdated: workspace });
+      return workspace;
+    },
+
+    deleteWorkspace: async (_parent, args, context) => {
+      assertAdmin(context);
+      const workspace = await Workspace.findById(parseId(args.id));
+      if (!workspace) {
+        throw new Error('Workspace not found');
+      }
+
+      await Promise.all([
+        Project.deleteMany({ workspace: workspace._id }),
+        Task.deleteMany({ workspace: workspace._id }),
+        Workspace.findByIdAndDelete(workspace._id),
+      ]);
+
+      return true;
+    },
+
     addWorkspaceMember: addWorkspaceMemberResolver,
 
     removeWorkspaceMember: removeWorkspaceMemberResolver,
@@ -666,9 +757,9 @@ const resolvers = {
       const project = await Project.findById(parseId(args.input.projectId));
       if (!project) throw new Error('Project not found');
       const workspace = await Workspace.findById(project.workspace);
-      assertWorkspaceAccess(workspace, user._id);
-      const workspaceRole = getWorkspaceRole(workspace, user._id);
-      const canManageProjectMembership = ['ADMIN', 'MANAGER'].includes(workspaceRole) || getProjectAccessLevel(project, user._id) === 'EDIT' || String(project.createdBy) === String(user._id);
+      assertWorkspaceAccess(workspace, user._id, user.role);
+      const workspaceRole = getWorkspaceRole(workspace, user._id, user.role);
+      const canManageProjectMembership = ['ADMIN', 'MANAGER'].includes(workspaceRole) || getProjectAccessLevel(project, user._id, user.role) === 'EDIT' || String(project.createdBy) === String(user._id);
       if (!canManageProjectMembership) {
         throw new Error('EDIT project access required');
       }
@@ -689,9 +780,9 @@ const resolvers = {
       const project = await Project.findById(parseId(args.input.projectId));
       if (!project) throw new Error('Project not found');
       const workspace = await Workspace.findById(project.workspace);
-      assertWorkspaceAccess(workspace, user._id);
-      const workspaceRole = getWorkspaceRole(workspace, user._id);
-      const canManageProjectMembership = ['ADMIN', 'MANAGER'].includes(workspaceRole) || getProjectAccessLevel(project, user._id) === 'EDIT' || String(project.createdBy) === String(user._id);
+      assertWorkspaceAccess(workspace, user._id, user.role);
+      const workspaceRole = getWorkspaceRole(workspace, user._id, user.role);
+      const canManageProjectMembership = ['ADMIN', 'MANAGER'].includes(workspaceRole) || getProjectAccessLevel(project, user._id, user.role) === 'EDIT' || String(project.createdBy) === String(user._id);
       if (!canManageProjectMembership) {
         throw new Error('EDIT project access required');
       }
@@ -709,9 +800,9 @@ const resolvers = {
       const project = await Project.findById(parseId(args.projectId));
       if (!project) throw new Error('Project not found');
       const workspace = await Workspace.findById(project.workspace);
-      assertWorkspaceAccess(workspace, user._id);
-      const workspaceRole = getWorkspaceRole(workspace, user._id);
-      const canManageProjectMembership = ['ADMIN', 'MANAGER'].includes(workspaceRole) || getProjectAccessLevel(project, user._id) === 'EDIT' || String(project.createdBy) === String(user._id);
+      assertWorkspaceAccess(workspace, user._id, user.role);
+      const workspaceRole = getWorkspaceRole(workspace, user._id, user.role);
+      const canManageProjectMembership = ['ADMIN', 'MANAGER'].includes(workspaceRole) || getProjectAccessLevel(project, user._id, user.role) === 'EDIT' || String(project.createdBy) === String(user._id);
       if (!canManageProjectMembership) {
         throw new Error('EDIT project access required');
       }
@@ -739,7 +830,7 @@ const resolvers = {
         throw new Error('Workspace not found');
       }
 
-      assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER']);
+      assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER'], user.role);
 
       const project = await Project.create({
         workspace: workspace._id,
@@ -763,6 +854,76 @@ const resolvers = {
       return project;
     },
 
+    updateProject: async (_parent, args, context) => {
+      const user = assertAuthenticated(context);
+      const project = await Project.findById(parseId(args.input.id));
+      if (!project) {
+        throw new Error('Project not found');
+      }
+
+      const workspace = await Workspace.findById(project.workspace);
+      if (!workspace) {
+        throw new Error('Workspace not found');
+      }
+
+      if (!canManageWorkspace(workspace, user._id, user.role) && String(project.createdBy) !== String(user._id)) {
+        throw new Error('You do not have permission to update this project');
+      }
+
+      if (args.input.name !== undefined) {
+        const name = String(args.input.name || '').trim();
+        if (!name) {
+          throw new Error('Project name is required');
+        }
+        project.name = name;
+      }
+
+      if (args.input.description !== undefined) {
+        project.description = args.input.description || '';
+      }
+
+      if (args.input.status !== undefined) {
+        project.status = args.input.status;
+      }
+
+      if (args.input.startDate !== undefined) {
+        project.startDate = args.input.startDate || null;
+      }
+
+      if (args.input.dueDate !== undefined) {
+        project.dueDate = args.input.dueDate || null;
+      }
+
+      await project.save();
+      const populated = await project.populate([{ path: 'members.user' }, { path: 'createdBy' }, { path: 'workspace' }]);
+      pubsub.publish(EVENTS.PROJECT_UPDATED(String(populated._id)), { projectUpdated: populated });
+      return populated;
+    },
+
+    deleteProject: async (_parent, args, context) => {
+      const user = assertAuthenticated(context);
+      const project = await Project.findById(parseId(args.id));
+      if (!project) {
+        throw new Error('Project not found');
+      }
+
+      const workspace = await Workspace.findById(project.workspace);
+      if (!workspace) {
+        throw new Error('Workspace not found');
+      }
+
+      if (!canManageWorkspace(workspace, user._id, user.role) && String(project.createdBy) !== String(user._id)) {
+        throw new Error('You do not have permission to delete this project');
+      }
+
+      await Promise.all([
+        Task.deleteMany({ project: project._id }),
+        Project.findByIdAndDelete(project._id),
+      ]);
+
+      return true;
+    },
+
     createTask: async (_parent, args, context) => {
       const user = assertAuthenticated(context);
       const workspaceId = parseId(args.input.workspaceId);
@@ -782,8 +943,8 @@ const resolvers = {
         throw new Error('Project not found in this workspace');
       }
 
-      assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER', 'MEMBER']);
-      if (project.members.length) assertProjectAccess(project, user._id, 'EDIT');
+      assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER', 'MEMBER'], user.role);
+      if (project.members.length) assertProjectAccess(project, user._id, 'EDIT', user.role);
 
       const task = await Task.create({
         workspace: workspace._id,
@@ -826,9 +987,9 @@ const resolvers = {
       const user = assertAuthenticated(context);
       const { task, workspace } = await getTaskWithWorkspace(parseId(args.input.id));
 
-      assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER', 'MEMBER']);
+      assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER', 'MEMBER'], user.role);
       const taskProject = await Project.findById(task.project);
-      if (taskProject?.members.length) assertProjectAccess(taskProject, user._id, 'EDIT');
+      if (taskProject?.members.length) assertProjectAccess(taskProject, user._id, 'EDIT', user.role);
 
       const previousAssignee = task.assignee ? String(task.assignee) : null;
       const updates = {
@@ -881,11 +1042,41 @@ const resolvers = {
       return task;
     },
 
+    deleteTask: async (_parent, args, context) => {
+      const user = assertAuthenticated(context);
+      const task = await Task.findById(parseId(args.id));
+      if (!task) {
+        throw new Error('Task not found');
+      }
+
+      const workspace = await Workspace.findById(task.workspace);
+      if (!workspace) {
+        throw new Error('Workspace not found');
+      }
+
+      const project = await Project.findById(task.project);
+      if (!project) {
+        throw new Error('Project not found');
+      }
+
+      if (
+        !(user.role === 'ADMIN' || canManageWorkspace(workspace, user._id, user.role)) &&
+        !(project.members.length ? getProjectAccessLevel(project, user._id, user.role) === 'EDIT' : false) &&
+        String(task.createdBy) !== String(user._id)
+      ) {
+        throw new Error('You do not have permission to delete this task');
+      }
+
+      await Task.findByIdAndDelete(task._id);
+      pubsub.publish(EVENTS.TASK_CHANGED(String(task.project)), { taskChanged: task });
+      return true;
+    },
+
     addComment: async (_parent, args, context) => {
       const user = assertAuthenticated(context);
       const { task, workspace } = await getTaskWithWorkspace(parseId(args.input.taskId));
 
-      assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER', 'MEMBER']);
+      assertWorkspaceRole(workspace, user._id, ['ADMIN', 'MANAGER', 'MEMBER'], user.role);
 
       const body = String(args.input.body || '').trim();
       if (!body) {
