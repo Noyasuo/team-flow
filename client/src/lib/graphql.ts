@@ -102,6 +102,22 @@ export const ADD_WORKSPACE_MEMBER = gql`
   }
 `;
 
+export const REMOVE_WORKSPACE_MEMBER = gql`
+  mutation RemoveWorkspaceMember($workspaceId: ID!, $userId: ID!) {
+    removeWorkspaceMember(workspaceId: $workspaceId, userId: $userId) {
+      id
+      members {
+        role
+        user {
+          id
+          name
+          email
+        }
+      }
+    }
+  }
+`;
+
 export const WORKSPACE = gql`
   query Workspace($id: ID!) {
     workspace(id: $id) {
@@ -228,7 +244,7 @@ export const PROJECT = gql`
         name
         owner { id }
         members {
-          user { id }
+          user { id name email }
           role
         }
       }

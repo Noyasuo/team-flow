@@ -9,6 +9,7 @@ import {
   CREATE_WORKSPACE,
   DASHBOARD,
   PROJECTS,
+  REMOVE_WORKSPACE_MEMBER,
   USERS,
   WORKSPACES,
 } from '../../lib/graphql';
@@ -99,6 +100,8 @@ export function DashboardPage() {
   const [createProject, { loading: createProjectLoading }] = useMutation(CREATE_PROJECT);
   const [addWorkspaceMember, { loading: addWorkspaceMemberLoading }] =
     useMutation<AddWorkspaceMemberResult>(ADD_WORKSPACE_MEMBER);
+  const [updateWorkspaceMemberRole] = useMutation<AddWorkspaceMemberResult>(ADD_WORKSPACE_MEMBER);
+  const [removeWorkspaceMember] = useMutation(REMOVE_WORKSPACE_MEMBER);
   const [memberUserId, setMemberUserId] = React.useState('');
   const [memberRole, setMemberRole] = React.useState<'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'>('MEMBER');
   const [showCreateWorkspace, setShowCreateWorkspace] = React.useState(false);
@@ -293,6 +296,60 @@ export function DashboardPage() {
     showToast(`${targetUser.name} added as ${memberRole}.`, 'success');
   }
 
+  async function handleWorkspaceMemberRoleChange(
+    memberId: string,
+    memberName: string,
+    role: 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'
+  ) {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    try {
+      await updateWorkspaceMemberRole({
+        variables: {
+          input: {
+            workspaceId: activeWorkspace.id,
+            userId: memberId,
+            role,
+          },
+        },
+      });
+
+      await refetch();
+      showToast(`${memberName}'s access updated to ${role}.`, 'success');
+    } catch (updateError) {
+      showToast(
+        updateError instanceof Error
+          ? updateError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to update member access.',
+        'error'
+      );
+    }
+  }
+
+  async function handleRemoveWorkspaceMember(memberId: string, memberName: string) {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    try {
+      await removeWorkspaceMember({
+        variables: { workspaceId: activeWorkspace.id, userId: memberId },
+      });
+
+      await Promise.all([refetch(), refetchUsers()]);
+      showToast(`${memberName} removed from workspace.`, 'success');
+    } catch (removeError) {
+      showToast(
+        removeError instanceof Error
+          ? removeError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to remove member.',
+        'error'
+      );
+    }
+  }
+
   if (workspacesLoading) {
     return <p className="text-sm text-ink/70">Loading workspaces...</p>;
   }
@@ -426,18 +483,52 @@ export function DashboardPage() {
 
             <div className="rounded-xl border border-ink/10 bg-sand/20 p-4">
               <p className="text-sm font-medium text-ink">Current members</p>
+              <p className="text-xs text-ink/60">Change a member's access level or remove them from the workspace.</p>
               <ul className="mt-3 space-y-2 text-sm">
-                {activeWorkspace?.members.map((member) => (
-                  <li key={member.user.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
-                    <div>
-                      <p className="font-medium">{member.user.name}</p>
-                      <p className="text-xs text-ink/60">{member.user.email}</p>
-                    </div>
-                    <span className="rounded-full bg-ink px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-mist">
-                      {member.role}
-                    </span>
-                  </li>
-                ))}
+                {activeWorkspace?.members.map((member) => {
+                  const isOwner = activeWorkspace.owner.id === member.user.id;
+                  return (
+                    <li key={member.user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
+                      <div>
+                        <p className="font-medium">{member.user.name}</p>
+                        <p className="text-xs text-ink/60">{member.user.email}</p>
+                      </div>
+                      {isOwner ? (
+                        <span className="rounded-full bg-ink px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-mist">
+                          Owner
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <select
+                            aria-label={`${member.user.name}'s role`}
+                            value={member.role}
+                            onChange={(event) =>
+                              void handleWorkspaceMemberRoleChange(
+                                member.user.id,
+                                member.user.name,
+                                event.target.value as typeof member.role
+                              )
+                            }
+                            className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"
+                          >
+                            {workspaceRoles.map((role) => (
+                              <option key={role} value={role}>
+                                {role}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => void handleRemoveWorkspaceMember(member.user.id, member.user.name)}
+                            className="rounded-lg border border-ember/30 px-2 py-1.5 text-xs text-ember"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           </div>

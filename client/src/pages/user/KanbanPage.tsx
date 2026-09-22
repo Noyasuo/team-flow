@@ -103,13 +103,17 @@ export function KanbanPage() {
 
   const selectedProject = projectData?.project ?? null;
   const workspaceId = selectedProject?.workspace.id ?? null;
-  const currentProjectRole = selectedProject?.workspace.owner.id === user?.id
+  const isProjectCreator = selectedProject?.createdBy.id === user?.id;
+  const isWorkspaceOwner = selectedProject?.workspace.owner.id === user?.id;
+  const currentProjectRole = isWorkspaceOwner
     ? 'ADMIN'
-    : selectedProject?.createdBy.id === user?.id
+    : isProjectCreator
       ? 'MANAGE'
     : selectedProject?.workspace.members.find((member) => member.user.id === user?.id)?.role ?? null;
-  const canManageProject = currentProjectRole === 'ADMIN' || currentProjectRole === 'MANAGER' ||
-    selectedProject?.members.some((member) => member.user.id === user?.id && member.accessLevel === 'MANAGE');
+  const projectMemberAccess = selectedProject?.members.find((member) => member.user.id === user?.id)?.accessLevel ?? null;
+  // Mirrors the server's project access rule (authorization.js: getProjectAccessLevel) -
+  // only the project creator or an explicit MANAGE member can manage access, regardless of workspace role.
+  const canManageProject = isProjectCreator || projectMemberAccess === 'MANAGE';
   const availableMembers = selectedProject?.workspace.members.filter(
     (member) => member.user.id !== selectedProject.createdBy.id && !selectedProject.members.some((projectMember) => projectMember.user.id === member.user.id)
   ) ?? [];

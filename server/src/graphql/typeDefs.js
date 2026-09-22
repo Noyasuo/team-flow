@@ -347,6 +347,7 @@ const typeDefs = `#graphql
 
     createWorkspace(input: CreateWorkspaceInput!): Workspace!
     addWorkspaceMember(input: AddWorkspaceMemberInput!): Workspace!
+    removeWorkspaceMember(workspaceId: ID!, userId: ID!): Workspace!
     addProjectMember(input: AddProjectMemberInput!): Project!
     updateProjectMemberAccess(input: UpdateProjectMemberAccessInput!): Project!
     removeProjectMember(projectId: ID!, userId: ID!): Project!

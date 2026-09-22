@@ -163,6 +163,37 @@ async function addWorkspaceMemberResolver(_parent, args, context) {
   return workspace;
 }
 
+async function removeWorkspaceMemberResolver(_parent, args, context) {
+  const user = assertAuthenticated(context);
+  const workspaceId = parseId(args.workspaceId);
+  const memberId = parseId(args.userId);
+
+  const workspace = await Workspace.findById(workspaceId);
+  if (!workspace) {
+    throw new Error('Workspace not found');
+  }
+
+  assertWorkspaceRole(workspace, user._id, ['ADMIN']);
+
+  if (String(workspace.owner) === String(memberId)) {
+    throw new Error('Workspace owner cannot be removed');
+  }
+
+  workspace.members = workspace.members.filter((member) => String(member.user) !== String(memberId));
+  await workspace.save();
+
+  await createActivity({
+    workspace: workspace._id,
+    actor: user._id,
+    entityType: 'WORKSPACE',
+    entityId: workspace._id,
+    action: 'MEMBER_REMOVED',
+    meta: { userId: String(memberId) },
+  });
+
+  return workspace;
+}
+
 const resolvers = {
   DateTime: DateTimeResolver,
   JSON: JSONResolver,
@@ -603,6 +634,8 @@ const resolvers = {
     createWorkspace: createWorkspaceResolver,
 
     addWorkspaceMember: addWorkspaceMemberResolver,
+
+    removeWorkspaceMember: removeWorkspaceMemberResolver,
 
     addProjectMember: async (_parent, args, context) => {
       const user = assertAuthenticated(context);
