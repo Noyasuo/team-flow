@@ -42,6 +42,7 @@ export function ProjectsFallbackPage() {
   const activeWorkspaceRole =
     activeWorkspace?.members.find((member) => member.user.id === user?.id)?.role ?? null;
   const canCreateProject = activeWorkspaceRole ? ['ADMIN', 'MANAGER'].includes(activeWorkspaceRole) : false;
+  const canCreateWorkspace = ['ADMIN', 'MANAGER'].includes(user?.role ?? 'MEMBER');
 
   // Sync selected workspace when first workspace loads
   React.useEffect(() => {
@@ -98,7 +99,9 @@ export function ProjectsFallbackPage() {
       <section className="rounded-2xl border border-ink/10 bg-white p-5">
         <h2 className="text-2xl font-semibold">No workspace found</h2>
         <p className="mt-2 text-sm text-ink/70">
-          Create a workspace first from Dashboard, then manage projects here.
+          {canCreateWorkspace
+            ? 'Create a workspace first from Dashboard, then manage projects here.'
+            : 'You can access workspaces after the creator adds you as a member.'}
         </p>
       </section>
     );

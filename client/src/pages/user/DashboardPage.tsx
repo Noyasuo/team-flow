@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@apollo/client/react';
 import React from 'react';
 import dayjs from 'dayjs';
+import { X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   ADD_WORKSPACE_MEMBER,
@@ -97,6 +98,8 @@ export function DashboardPage() {
     useMutation<AddWorkspaceMemberResult>(ADD_WORKSPACE_MEMBER);
   const [memberUserId, setMemberUserId] = React.useState('');
   const [memberRole, setMemberRole] = React.useState<'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'>('MEMBER');
+  const [showCreateWorkspace, setShowCreateWorkspace] = React.useState(false);
+  const [workspaceFormError, setWorkspaceFormError] = React.useState('');
 
   // Use selected workspace or fall back to first
   const activeWorkspace = workspaceData?.workspaces?.find((w) => w.id === selectedWorkspaceId) ??
@@ -153,31 +156,53 @@ export function DashboardPage() {
     variables: { workspaceId: activeWorkspace?.id, page: 1, limit: 8 },
   });
 
-  async function handleCreateWorkspace() {
+  function openCreateWorkspaceModal() {
     if (!canCreateWorkspace) {
       window.alert('Only ADMIN or MANAGER accounts can create workspaces.');
       return;
     }
 
-    const workspaceName = window.prompt('New workspace name');
-    if (!workspaceName) {
+    setWorkspaceFormError('');
+    setShowCreateWorkspace(true);
+  }
+
+  async function handleCreateWorkspace(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorkspaceFormError('');
+
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') ?? '').trim();
+    const description = String(form.get('description') ?? '').trim();
+
+    if (name.length < 2) {
+      setWorkspaceFormError('Workspace name must be at least 2 characters.');
       return;
     }
 
-    const result = await createWorkspace({
-      variables: {
-        input: {
-          name: workspaceName,
-          description: 'Your default TeamFlow workspace',
+    try {
+      const result = await createWorkspace({
+        variables: {
+          input: {
+            name,
+            description: description || 'Your default TeamFlow workspace',
+          },
         },
-      },
-    });
+      });
 
-    await refetch();
-    
-    // Switch to newly created workspace
-    if (result.data?.createWorkspace?.id) {
-      setSelectedWorkspaceId(result.data.createWorkspace.id);
+      await refetch();
+
+      // Switch to newly created workspace
+      if (result.data?.createWorkspace?.id) {
+        setSelectedWorkspaceId(result.data.createWorkspace.id);
+      }
+
+      setShowCreateWorkspace(false);
+    } catch (createError) {
+      setWorkspaceFormError(
+        createError instanceof Error
+          ? createError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to create workspace.'
+      );
     }
   }
 
@@ -257,12 +282,20 @@ export function DashboardPage() {
         {canCreateWorkspace ? (
           <button
             type="button"
-            onClick={() => void handleCreateWorkspace()}
+            onClick={openCreateWorkspaceModal}
             disabled={createWorkspaceLoading}
             className="rounded-xl bg-ink px-4 py-2 text-sm text-mist"
           >
             {createWorkspaceLoading ? 'Creating...' : 'Create workspace'}
           </button>
+        ) : null}
+        {showCreateWorkspace ? (
+          <CreateWorkspaceModal
+            error={workspaceFormError}
+            loading={createWorkspaceLoading}
+            onClose={() => setShowCreateWorkspace(false)}
+            onSubmit={handleCreateWorkspace}
+          />
         ) : null}
       </section>
     );
@@ -287,7 +320,7 @@ export function DashboardPage() {
           {canCreateWorkspace ? (
             <button
               type="button"
-              onClick={() => void handleCreateWorkspace()}
+              onClick={openCreateWorkspaceModal}
               disabled={createWorkspaceLoading}
               className="rounded-xl border border-ink/20 px-4 py-2 text-sm hover:bg-ink/5 disabled:opacity-70"
             >
@@ -466,6 +499,81 @@ export function DashboardPage() {
           </ul>
         )}
       </article>
+
+      {showCreateWorkspace ? (
+        <CreateWorkspaceModal
+          error={workspaceFormError}
+          loading={createWorkspaceLoading}
+          onClose={() => setShowCreateWorkspace(false)}
+          onSubmit={handleCreateWorkspace}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function CreateWorkspaceModal({
+  error,
+  loading,
+  onClose,
+  onSubmit,
+}: {
+  error: string;
+  loading: boolean;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-20 grid place-items-center bg-ink/30 p-4">
+      <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-float">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Create workspace</h2>
+          <button type="button" onClick={onClose} title="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        {error ? <p className="rounded-lg bg-ember/10 px-3 py-2 text-sm text-ember">{error}</p> : null}
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">Workspace name</span>
+          <input
+            name="name"
+            required
+            minLength={2}
+            maxLength={120}
+            autoFocus
+            placeholder="e.g. Product Engineering"
+            className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm outline-none focus:border-aqua"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">
+            Description <span className="font-normal text-ink/50">(optional)</span>
+          </span>
+          <textarea
+            name="description"
+            rows={3}
+            maxLength={500}
+            placeholder="What's this workspace for?"
+            className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm outline-none focus:border-aqua"
+          />
+        </label>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="rounded-xl border border-ink/10 px-4 py-2 text-sm">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
+          >
+            {loading ? 'Creating...' : 'Create workspace'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
