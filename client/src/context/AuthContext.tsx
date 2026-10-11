@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -10,6 +11,8 @@ import {
 const TOKEN_KEY = 'teamflow_token';
 const USER_KEY = 'teamflow_user';
 const PASSWORD_CHANGE_KEY = 'teamflow_requires_password_change';
+const LAST_ACTIVITY_KEY = 'teamflow_last_activity';
+const IDLE_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
 type SessionUser = {
   id: string;
@@ -73,20 +76,145 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
 
+  const logout = useCallback(() => {
+    window.localStorage.removeItem(TOKEN_KEY);
+    window.localStorage.removeItem(USER_KEY);
+    window.localStorage.removeItem(PASSWORD_CHANGE_KEY);
+    window.localStorage.removeItem(LAST_ACTIVITY_KEY);
+    setToken(null);
+    setUser(null);
+  }, []);
+
   useEffect(() => {
-    const storedToken = window.localStorage.getItem(TOKEN_KEY);
+    let storedToken = window.localStorage.getItem(TOKEN_KEY);
     const storedUser = readStoredUser();
     const storedPasswordChange = window.localStorage.getItem(PASSWORD_CHANGE_KEY) === 'true';
+    const storedLastActivity = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY));
+    const isSessionExpired =
+      Boolean(storedToken) &&
+      storedLastActivity > 0 &&
+      Date.now() - storedLastActivity >= IDLE_TIMEOUT_MS;
+
+    if (isSessionExpired) {
+      window.localStorage.removeItem(TOKEN_KEY);
+      window.localStorage.removeItem(USER_KEY);
+      window.localStorage.removeItem(PASSWORD_CHANGE_KEY);
+      window.localStorage.removeItem(LAST_ACTIVITY_KEY);
+      storedToken = null;
+    } else if (storedToken && storedLastActivity <= 0) {
+      window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+    } else if (!storedToken) {
+      window.localStorage.removeItem(LAST_ACTIVITY_KEY);
+    }
 
     setToken(storedToken);
     setUser(
-      storedUser && storedToken && !storedUser.role
+      !isSessionExpired && storedUser && storedToken && !storedUser.role
         ? { ...storedUser, role: decodeRoleFromToken(storedToken) ?? 'MEMBER' }
-        : storedUser
+        : isSessionExpired ? null : storedUser
     );
-    setRequiresPasswordChange(storedPasswordChange);
+    setRequiresPasswordChange(!isSessionExpired && storedPasswordChange);
     setIsAuthReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!isAuthReady || !token) {
+      return;
+    }
+
+    let lastActivityAt = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY)) || Date.now();
+    let lastPersistedAt = lastActivityAt;
+    let timeoutId: number | undefined;
+
+    function isSessionExpired() {
+      const sharedActivityAt = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY));
+      if (sharedActivityAt > lastActivityAt) {
+        lastActivityAt = sharedActivityAt;
+      }
+      return Date.now() - lastActivityAt >= IDLE_TIMEOUT_MS;
+    }
+
+    function scheduleExpiration() {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+
+      const remaining = IDLE_TIMEOUT_MS - (Date.now() - lastActivityAt);
+      if (remaining <= 0) {
+        logout();
+        return;
+      }
+
+      timeoutId = window.setTimeout(() => {
+        if (isSessionExpired()) {
+          logout();
+        } else {
+          scheduleExpiration();
+        }
+      }, remaining);
+    }
+
+    function recordActivity() {
+      if (isSessionExpired()) {
+        logout();
+        return;
+      }
+
+      lastActivityAt = Date.now();
+      // Limit storage writes for high-frequency events such as pointer movement.
+      if (lastActivityAt - lastPersistedAt >= 1000) {
+        window.localStorage.setItem(LAST_ACTIVITY_KEY, String(lastActivityAt));
+        lastPersistedAt = lastActivityAt;
+        scheduleExpiration();
+      }
+    }
+
+    function handleStorage(event: StorageEvent) {
+      if (event.key === TOKEN_KEY && !event.newValue) {
+        logout();
+        return;
+      }
+
+      if (event.key === LAST_ACTIVITY_KEY && event.newValue) {
+        const sharedActivityAt = Number(event.newValue);
+        if (sharedActivityAt > lastActivityAt) {
+          lastActivityAt = sharedActivityAt;
+          lastPersistedAt = sharedActivityAt;
+          scheduleExpiration();
+        }
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        recordActivity();
+      }
+    }
+
+    scheduleExpiration();
+    window.addEventListener('pointerdown', recordActivity);
+    window.addEventListener('pointermove', recordActivity);
+    window.addEventListener('keydown', recordActivity);
+    window.addEventListener('scroll', recordActivity, { passive: true });
+    window.addEventListener('touchstart', recordActivity, { passive: true });
+    window.addEventListener('wheel', recordActivity, { passive: true });
+    window.addEventListener('storage', handleStorage);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+      window.removeEventListener('pointerdown', recordActivity);
+      window.removeEventListener('pointermove', recordActivity);
+      window.removeEventListener('keydown', recordActivity);
+      window.removeEventListener('scroll', recordActivity);
+      window.removeEventListener('touchstart', recordActivity);
+      window.removeEventListener('wheel', recordActivity);
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAuthReady, logout, token]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -101,6 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.localStorage.setItem(TOKEN_KEY, nextToken);
         window.localStorage.setItem(USER_KEY, JSON.stringify(sessionUser));
         window.localStorage.setItem(PASSWORD_CHANGE_KEY, String(nextRequiresPasswordChange));
+        window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
         setToken(nextToken);
         setUser(sessionUser);
         setRequiresPasswordChange(nextRequiresPasswordChange);
@@ -109,15 +238,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.localStorage.removeItem(PASSWORD_CHANGE_KEY);
         setRequiresPasswordChange(false);
       },
-      logout: () => {
-        window.localStorage.removeItem(TOKEN_KEY);
-        window.localStorage.removeItem(USER_KEY);
-        window.localStorage.removeItem(PASSWORD_CHANGE_KEY);
-        setToken(null);
-        setUser(null);
-      },
+      logout,
     }),
-    [isAuthReady, requiresPasswordChange, token, user]
+    [isAuthReady, logout, requiresPasswordChange, token, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
