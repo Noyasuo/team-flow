@@ -1,10 +1,20 @@
-import { useMutation, useQuery } from '@apollo/client/react';
+import { useMutation, useQuery, useSubscription } from '@apollo/client/react';
 import dayjs from 'dayjs';
-import { ArrowLeft } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ArrowLeft, UsersRound } from 'lucide-react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ADD_PROJECT_MEMBER, CREATE_TASK, PROJECT, REMOVE_PROJECT_MEMBER, TASKS, UPDATE_PROJECT_MEMBER_ACCESS, UPDATE_TASK } from '../../lib/graphql';
+import {
+  CREATE_TASK,
+  PROJECT,
+  PROJECT_UPDATED_SUBSCRIPTION,
+  TASK_CHANGED_SUBSCRIPTION,
+  TASKS,
+  UPDATE_TASK,
+  WORKSPACE_UPDATED_SUBSCRIPTION,
+} from '../../lib/graphql';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { CreateTaskModal } from '../../components/CreateTaskModal';
 
 type TaskNode = {
   id: string;
@@ -36,7 +46,7 @@ type ProjectResult = {
     name: string;
     description?: string | null;
     createdBy: { id: string; name: string };
-    members: Array<{ user: { id: string; name: string; email: string }; accessLevel: 'VIEW' | 'EDIT' | 'MANAGE' }>;
+    members: Array<{ user: { id: string; name: string; email: string }; accessLevel: 'VIEW' | 'EDIT' }>;
     workspace: {
       id: string;
       name: string;
@@ -52,9 +62,10 @@ export function KanbanPage() {
   const navigate = useNavigate();
   const { projectId } = useParams();
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [search, setSearch] = useState('');
-  const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [selectedAccess, setSelectedAccess] = useState<'VIEW' | 'EDIT' | 'MANAGE'>('VIEW');
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [taskFormError, setTaskFormError] = useState('');
 
   const { data: projectData, loading: projectLoading, refetch: refetchProject } = useQuery<ProjectResult>(PROJECT, {
     skip: !projectId,
@@ -73,9 +84,25 @@ export function KanbanPage() {
 
   const [createTask, { loading: createTaskLoading }] = useMutation(CREATE_TASK);
   const [updateTask] = useMutation(UPDATE_TASK);
-  const [addProjectMember] = useMutation(ADD_PROJECT_MEMBER);
-  const [updateProjectMemberAccess] = useMutation(UPDATE_PROJECT_MEMBER_ACCESS);
-  const [removeProjectMember] = useMutation(REMOVE_PROJECT_MEMBER);
+
+  // Live updates: any task change, project-access change, or workspace-membership
+  // change on this board refreshes the relevant query automatically - no manual refresh needed.
+  const liveWorkspaceId = projectData?.project?.workspace.id;
+  useSubscription(TASK_CHANGED_SUBSCRIPTION, {
+    variables: { projectId },
+    skip: !projectId,
+    onData: () => void refetch(),
+  });
+  useSubscription(PROJECT_UPDATED_SUBSCRIPTION, {
+    variables: { projectId },
+    skip: !projectId,
+    onData: () => void refetchProject(),
+  });
+  useSubscription(WORKSPACE_UPDATED_SUBSCRIPTION, {
+    variables: { workspaceId: liveWorkspaceId },
+    skip: !liveWorkspaceId,
+    onData: () => void refetchProject(),
+  });
 
   const groupedTasks = useMemo(() => {
     const bucket: Record<TaskNode['status'], TaskNode[]> = {
@@ -98,61 +125,62 @@ export function KanbanPage() {
 
   const selectedProject = projectData?.project ?? null;
   const workspaceId = selectedProject?.workspace.id ?? null;
-  const currentProjectRole = selectedProject?.workspace.owner.id === user?.id
+  const isProjectCreator = selectedProject?.createdBy.id === user?.id;
+  const isWorkspaceOwner = selectedProject?.workspace.owner.id === user?.id;
+  const currentProjectRole = isWorkspaceOwner
     ? 'ADMIN'
-    : selectedProject?.createdBy.id === user?.id
-      ? 'MANAGE'
+    : isProjectCreator
+      ? 'EDIT'
     : selectedProject?.workspace.members.find((member) => member.user.id === user?.id)?.role ?? null;
-  const canManageProject = currentProjectRole === 'ADMIN' || currentProjectRole === 'MANAGER' ||
-    selectedProject?.members.some((member) => member.user.id === user?.id && member.accessLevel === 'MANAGE');
-  const availableMembers = selectedProject?.workspace.members.filter(
-    (member) => member.user.id !== selectedProject.createdBy.id && !selectedProject.members.some((projectMember) => projectMember.user.id === member.user.id)
-  ) ?? [];
-
-  async function handleAddProjectMember() {
-    if (!selectedMemberId || !projectId) return;
-    await addProjectMember({ variables: { input: { projectId, userId: selectedMemberId, accessLevel: selectedAccess } } });
-    await refetchProject();
-    setSelectedMemberId('');
-  }
-
-  async function handleProjectAccessChange(memberId: string, accessLevel: string) {
-    if (!projectId) return;
-    await updateProjectMemberAccess({ variables: { input: { projectId, userId: memberId, accessLevel } } });
-    await refetchProject();
-  }
-
-  async function handleRemoveProjectMember(memberId: string) {
-    if (!projectId) return;
-    await removeProjectMember({ variables: { projectId, userId: memberId } });
-    await refetchProject();
-  }
-
-  async function handleCreateTask() {
-    const title = window.prompt('Task title');
-    if (!title) {
-      return;
-    }
-
+  function openCreateTaskModal() {
     if (!workspaceId) {
-      window.alert('Project workspace is still loading. Please try again in a moment.');
+      showToast('Project workspace is still loading. Please try again in a moment.', 'error');
       return;
     }
 
-    await createTask({
-      variables: {
-        input: {
-          workspaceId,
-          projectId,
-          title,
-          description: '',
-          priority: 'MEDIUM',
-          status: 'TODO',
-        },
-      },
-    });
+    setTaskFormError('');
+    setShowCreateTask(true);
+  }
 
-    await refetch();
+  async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!workspaceId) {
+      setTaskFormError('Project workspace is still loading. Please try again in a moment.');
+      return;
+    }
+
+    setTaskFormError('');
+    const form = new FormData(event.currentTarget);
+    const title = String(form.get('title') ?? '').trim();
+
+    if (title.length < 2) {
+      setTaskFormError('Task title must be at least 2 characters.');
+      return;
+    }
+
+    try {
+      await createTask({
+        variables: {
+          input: {
+            workspaceId,
+            projectId,
+            title,
+            description: '',
+            priority: 'MEDIUM',
+            status: 'TODO',
+          },
+        },
+      });
+
+      await refetch();
+      setShowCreateTask(false);
+    } catch (createError) {
+      setTaskFormError(
+        createError instanceof Error
+          ? createError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to create task.'
+      );
+    }
   }
 
   async function handleStatusChange(taskId: string, status: TaskNode['status']) {
@@ -194,6 +222,14 @@ export function KanbanPage() {
             <ArrowLeft size={15} />
             Back to projects
           </Link>
+          <Link
+            to={`/projects/${projectId}/members`}
+            title="Project members"
+            aria-label="Project members"
+            className="inline-flex items-center justify-center rounded-xl border border-ink/10 px-3 py-2 text-sm hover:bg-ink hover:text-mist"
+          >
+            <UsersRound size={16} />
+          </Link>
           <input
             placeholder="Search tasks..."
             value={search}
@@ -209,7 +245,7 @@ export function KanbanPage() {
           </button>
           <button
             type="button"
-            onClick={() => void handleCreateTask()}
+            onClick={openCreateTaskModal}
             disabled={createTaskLoading}
             className="rounded-xl bg-ink px-3 py-2 text-sm text-mist"
           >
@@ -217,39 +253,6 @@ export function KanbanPage() {
           </button>
         </div>
       </div>
-
-      {selectedProject ? (
-        <section className="rounded-2xl border border-ink/10 bg-white p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold">Project access</h3>
-              <p className="text-sm text-ink/60">Assign VIEW, EDIT, or MANAGE access for this project.</p>
-            </div>
-            <span className="rounded-full bg-aqua/10 px-3 py-1 text-xs font-medium text-aqua">Your access: {currentProjectRole ?? 'VIEW'}</span>
-          </div>
-          <div className="mt-3 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink/10 p-3 text-sm">
-              <span><strong>{selectedProject.createdBy.name}</strong> <span className="text-ink/60">Project creator</span></span>
-              <span className="rounded-lg bg-ink/5 px-2 py-1 text-xs">MANAGE</span>
-            </div>
-            {selectedProject.members.map((member) => (
-              <div key={member.user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink/10 p-3 text-sm">
-                <span><strong>{member.user.name}</strong> <span className="text-ink/60">{member.user.email}</span></span>
-                {canManageProject ? (
-                  <div className="flex items-center gap-2"><select value={member.accessLevel} onChange={(event) => void handleProjectAccessChange(member.user.id, event.target.value)} className="rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs"><option>VIEW</option><option>EDIT</option><option>MANAGE</option></select><button type="button" onClick={() => void handleRemoveProjectMember(member.user.id)} className="rounded-lg border border-ember/30 px-2 py-1.5 text-xs text-ember">Remove</button></div>
-                ) : <span className="rounded-lg bg-ink/5 px-2 py-1 text-xs">{member.accessLevel}</span>}
-              </div>
-            ))}
-          </div>
-          {canManageProject && availableMembers.length > 0 ? (
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-ink/10 pt-4">
-              <select value={selectedMemberId} onChange={(event) => setSelectedMemberId(event.target.value)} className="rounded-lg border border-ink/10 bg-white px-2 py-2 text-sm"><option value="">Add workspace member...</option>{availableMembers.map((member) => <option key={member.user.id} value={member.user.id}>{member.user.name}</option>)}</select>
-              <select value={selectedAccess} onChange={(event) => setSelectedAccess(event.target.value as 'VIEW' | 'EDIT' | 'MANAGE')} className="rounded-lg border border-ink/10 bg-white px-2 py-2 text-sm"><option>VIEW</option><option>EDIT</option><option>MANAGE</option></select>
-              <button type="button" onClick={() => void handleAddProjectMember()} className="rounded-lg bg-ink px-3 py-2 text-sm text-mist">Add access</button>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
 
       {loading ? (
         <p className="text-sm text-ink/70">Loading board...</p>
@@ -310,6 +313,15 @@ export function KanbanPage() {
           ))}
         </div>
       )}
+
+      {showCreateTask ? (
+        <CreateTaskModal
+          error={taskFormError}
+          loading={createTaskLoading}
+          onClose={() => setShowCreateTask(false)}
+          onSubmit={handleCreateTask}
+        />
+      ) : null}
     </section>
   );
 }

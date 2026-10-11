@@ -1,6 +1,7 @@
-import { useQuery } from '@apollo/client/react';
+import { useQuery, useSubscription } from '@apollo/client/react';
 import dayjs from 'dayjs';
 import { gql } from '@apollo/client';
+import { NOTIFICATION_ADDED_SUBSCRIPTION } from '../../lib/graphql';
 
 const NOTIFICATIONS = gql`
   query Notifications($unreadOnly: Boolean, $page: Int, $limit: Int) {
@@ -31,8 +32,13 @@ type NotificationsResult = {
 };
 
 export function NotificationsPage() {
-  const { data, loading } = useQuery<NotificationsResult>(NOTIFICATIONS, {
+  const { data, loading, refetch } = useQuery<NotificationsResult>(NOTIFICATIONS, {
     variables: { unreadOnly: false, page: 1, limit: 30 },
+  });
+
+  // Live updates: the list refreshes the instant a new notification arrives - no manual refresh needed.
+  useSubscription(NOTIFICATION_ADDED_SUBSCRIPTION, {
+    onData: () => void refetch(),
   });
 
   return (

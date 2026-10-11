@@ -14,16 +14,20 @@
   "dependencies": {
     "@apollo/server": "^5.5.1",
     "@as-integrations/express5": "^1.1.2",
+    "@graphql-tools/schema": "^10.1.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "graphql": "^16.14.2",
     "graphql-scalars": "^1.25.0",
+    "graphql-subscriptions": "^3.0.0",
+    "graphql-ws": "^6.2.2",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.7.1",
     "morgan": "^1.11.0",
+    "ws": "^8.21.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

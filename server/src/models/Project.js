@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const projectMemberSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    accessLevel: { type: String, enum: ['VIEW', 'EDIT', 'MANAGE'], required: true, default: 'VIEW' },
+    accessLevel: { type: String, enum: ['VIEW', 'EDIT'], required: true, default: 'VIEW' },
   },
   { _id: false }
 );

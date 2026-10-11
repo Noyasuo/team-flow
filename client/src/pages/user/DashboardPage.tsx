@@ -1,7 +1,8 @@
-import { useMutation, useQuery } from '@apollo/client/react';
+import { useMutation, useQuery, useSubscription } from '@apollo/client/react';
 import React from 'react';
 import dayjs from 'dayjs';
-import { Link } from 'react-router-dom';
+import { Building2, Users, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ADD_WORKSPACE_MEMBER,
   CREATE_PROJECT,
@@ -9,10 +10,13 @@ import {
   DASHBOARD,
   PROJECTS,
   USERS,
+  WORKSPACE_UPDATED_SUBSCRIPTION,
   WORKSPACES,
 } from '../../lib/graphql';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { CreateProjectModal } from '../../components/CreateProjectModal';
 
 type Workspace = {
   id: string;
@@ -78,15 +82,10 @@ const metricLabels = [
   { key: 'completedTasksThisWeek', label: 'Done (7d)' },
 ] as const;
 
-const workspaceRoles: Array<'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'> = [
-  'ADMIN',
-  'MANAGER',
-  'MEMBER',
-  'VIEWER',
-];
-
 export function DashboardPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
+  const { showToast } = useToast();
   const { selectedWorkspaceId, setSelectedWorkspaceId } = useWorkspaceContext();
   const { data: workspaceData, loading: workspacesLoading, refetch } =
     useQuery<WorkspacesResult>(WORKSPACES);
@@ -95,8 +94,12 @@ export function DashboardPage() {
   const [createProject, { loading: createProjectLoading }] = useMutation(CREATE_PROJECT);
   const [addWorkspaceMember, { loading: addWorkspaceMemberLoading }] =
     useMutation<AddWorkspaceMemberResult>(ADD_WORKSPACE_MEMBER);
-  const [memberUserId, setMemberUserId] = React.useState('');
-  const [memberRole, setMemberRole] = React.useState<'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'>('MEMBER');
+  const [showCreateWorkspace, setShowCreateWorkspace] = React.useState(false);
+  const [workspaceFormError, setWorkspaceFormError] = React.useState('');
+  const [showCreateProject, setShowCreateProject] = React.useState(false);
+  const [projectFormError, setProjectFormError] = React.useState('');
+  const [showAddMember, setShowAddMember] = React.useState(false);
+  const [addMemberFormError, setAddMemberFormError] = React.useState('');
 
   // Use selected workspace or fall back to first
   const activeWorkspace = workspaceData?.workspaces?.find((w) => w.id === selectedWorkspaceId) ??
@@ -118,22 +121,19 @@ export function DashboardPage() {
     (candidate) => !activeWorkspace?.members.some((member) => member.user.id === candidate.id)
   );
 
+  // Live updates: membership/role changes on the active workspace refresh this page automatically.
+  useSubscription(WORKSPACE_UPDATED_SUBSCRIPTION, {
+    variables: { workspaceId: activeWorkspace?.id },
+    skip: !activeWorkspace,
+    onData: () => void refetch(),
+  });
+
   // Sync selected workspace when first workspace loads
   React.useEffect(() => {
     if (activeWorkspace && !selectedWorkspaceId) {
       setSelectedWorkspaceId(activeWorkspace.id);
     }
   }, [activeWorkspace, selectedWorkspaceId, setSelectedWorkspaceId]);
-
-  React.useEffect(() => {
-    if (!canManageMembers) {
-      return;
-    }
-
-    if (!memberUserId && memberOptions.length > 0) {
-      setMemberUserId(memberOptions[0].id);
-    }
-  }, [canManageMembers, memberOptions, memberUserId]);
 
   const {
     data: dashboardData,
@@ -153,92 +153,151 @@ export function DashboardPage() {
     variables: { workspaceId: activeWorkspace?.id, page: 1, limit: 8 },
   });
 
-  async function handleCreateWorkspace() {
+  function openCreateWorkspaceModal() {
     if (!canCreateWorkspace) {
-      window.alert('Only ADMIN or MANAGER accounts can create workspaces.');
+      showToast('Only ADMIN or MANAGER accounts can create workspaces.', 'error');
       return;
     }
 
-    const workspaceName = window.prompt('New workspace name');
-    if (!workspaceName) {
+    setWorkspaceFormError('');
+    setShowCreateWorkspace(true);
+  }
+
+  async function handleCreateWorkspace(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorkspaceFormError('');
+
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') ?? '').trim();
+    const description = String(form.get('description') ?? '').trim();
+
+    if (name.length < 2) {
+      setWorkspaceFormError('Workspace name must be at least 2 characters.');
       return;
     }
 
-    const result = await createWorkspace({
-      variables: {
-        input: {
-          name: workspaceName,
-          description: 'Your default TeamFlow workspace',
+    try {
+      const result = await createWorkspace({
+        variables: {
+          input: {
+            name,
+            description: description || 'Your default TeamFlow workspace',
+          },
         },
-      },
-    });
+      });
 
-    await refetch();
-    
-    // Switch to newly created workspace
-    if (result.data?.createWorkspace?.id) {
-      setSelectedWorkspaceId(result.data.createWorkspace.id);
+      await refetch();
+
+      // Switch to newly created workspace
+      if (result.data?.createWorkspace?.id) {
+        setSelectedWorkspaceId(result.data.createWorkspace.id);
+      }
+
+      setShowCreateWorkspace(false);
+    } catch (createError) {
+      setWorkspaceFormError(
+        createError instanceof Error
+          ? createError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to create workspace.'
+      );
     }
   }
 
-  async function handleCreateProject() {
+  function openCreateProjectModal() {
     if (!activeWorkspace) {
       return;
     }
 
     if (!canCreateProject) {
-      window.alert('You do not have permission to create projects in this workspace.');
+      showToast('You do not have permission to create projects in this workspace.', 'error');
       return;
     }
 
-    const projectName = window.prompt('Project name');
-    if (!projectName) {
-      return;
-    }
-
-    const projectDescription = window.prompt('Project description (optional)') ?? '';
-
-    await createProject({
-      variables: {
-        input: {
-          workspaceId: activeWorkspace.id,
-          name: projectName,
-          description: projectDescription,
-          status: 'ACTIVE',
-        },
-      },
-    });
-
-    await Promise.all([refetch(), refetchDashboard(), refetchProjects()]);
+    setProjectFormError('');
+    setShowCreateProject(true);
   }
 
-  async function handleAddWorkspaceMember() {
-    if (!activeWorkspace || !canManageMembers) {
-      window.alert('Only the workspace creator can add members.');
+  function openMembersSection() {
+    navigate('/workspace-members');
+  }
+
+  async function handleCreateProject(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeWorkspace) {
       return;
     }
 
-    const targetUser = (usersData?.users.nodes ?? []).find((candidate) => candidate.id === memberUserId);
+    setProjectFormError('');
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get('name') ?? '').trim();
+    const description = String(form.get('description') ?? '').trim();
+
+    if (name.length < 2) {
+      setProjectFormError('Project name must be at least 2 characters.');
+      return;
+    }
+
+    try {
+      await createProject({
+        variables: {
+          input: {
+            workspaceId: activeWorkspace.id,
+            name,
+            description,
+            status: 'ACTIVE',
+          },
+        },
+      });
+
+      await Promise.all([refetch(), refetchDashboard(), refetchProjects()]);
+      setShowCreateProject(false);
+    } catch (createError) {
+      setProjectFormError(
+        createError instanceof Error
+          ? createError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to create project.'
+      );
+    }
+  }
+
+  async function handleAddWorkspaceMember(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeWorkspace) {
+      return;
+    }
+
+    setAddMemberFormError('');
+    const form = new FormData(event.currentTarget);
+    const userId = String(form.get('userId') ?? '');
+    const role = 'MEMBER' as 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
+    const targetUser = (usersData?.users.nodes ?? []).find((candidate) => candidate.id === userId);
 
     if (!targetUser) {
-      window.alert('Select a user to add.');
+      setAddMemberFormError('Select a user to add.');
       return;
     }
 
-    await addWorkspaceMember({
-      variables: {
-        input: {
-          workspaceId: activeWorkspace.id,
-          userId: targetUser.id,
-          role: memberRole,
+    try {
+      await addWorkspaceMember({
+        variables: {
+          input: {
+            workspaceId: activeWorkspace.id,
+            userId: targetUser.id,
+            role,
+          },
         },
-      },
-    });
+      });
 
-    await Promise.all([refetch(), refetchUsers()]);
-    setMemberUserId('');
-    setMemberRole('MEMBER');
-    window.alert(`${targetUser.name} added as ${memberRole}.`);
+      await Promise.all([refetch(), refetchUsers()]);
+      setShowAddMember(false);
+      showToast(`${targetUser.name} added as ${role}.`, 'success');
+    } catch (addError) {
+      setAddMemberFormError(
+        addError instanceof Error
+          ? addError.message.replace(/^GraphQL error:\s*/i, '')
+          : 'Unable to add member.'
+      );
+    }
   }
 
   if (workspacesLoading) {
@@ -257,12 +316,20 @@ export function DashboardPage() {
         {canCreateWorkspace ? (
           <button
             type="button"
-            onClick={() => void handleCreateWorkspace()}
+            onClick={openCreateWorkspaceModal}
             disabled={createWorkspaceLoading}
             className="rounded-xl bg-ink px-4 py-2 text-sm text-mist"
           >
             {createWorkspaceLoading ? 'Creating...' : 'Create workspace'}
           </button>
+        ) : null}
+        {showCreateWorkspace ? (
+          <CreateWorkspaceModal
+            error={workspaceFormError}
+            loading={createWorkspaceLoading}
+            onClose={() => setShowCreateWorkspace(false)}
+            onSubmit={handleCreateWorkspace}
+          />
         ) : null}
       </section>
     );
@@ -270,119 +337,38 @@ export function DashboardPage() {
 
   return (
     <section className="space-y-6">
-      <div>
-        <p className="text-sm uppercase tracking-[0.25em] text-aqua">Workspace</p>
-        <h2 className="text-3xl font-semibold">{activeWorkspace.name}</h2>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {canCreateProject ? (
-            <button
-              type="button"
-              onClick={() => void handleCreateProject()}
-              disabled={createProjectLoading}
-              className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
-            >
-              {createProjectLoading ? 'Creating...' : 'Create project'}
-            </button>
-          ) : null}
-          {canCreateWorkspace ? (
-            <button
-              type="button"
-              onClick={() => void handleCreateWorkspace()}
-              disabled={createWorkspaceLoading}
-              className="rounded-xl border border-ink/20 px-4 py-2 text-sm hover:bg-ink/5 disabled:opacity-70"
-            >
-              {createWorkspaceLoading ? 'Creating...' : 'New workspace'}
-            </button>
-          ) : null}
-          {canManageMembers ? (
-            <button
-              type="button"
-              onClick={() => void handleAddWorkspaceMember()}
-              disabled={addWorkspaceMemberLoading}
-              className="rounded-xl border border-ink/20 px-4 py-2 text-sm hover:bg-ink/5 disabled:opacity-70"
-            >
-              {addWorkspaceMemberLoading ? 'Adding...' : 'Add member'}
-            </button>
-          ) : null}
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {canCreateProject ? (
+          <button
+            type="button"
+            onClick={openCreateProjectModal}
+            disabled={createProjectLoading}
+            className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
+          >
+            {createProjectLoading ? 'Creating...' : 'Create project'}
+          </button>
+        ) : null}
+        {canCreateWorkspace ? (
+          <button
+            type="button"
+            onClick={openCreateWorkspaceModal}
+            disabled={createWorkspaceLoading}
+            className="inline-flex items-center gap-2 rounded-xl border border-ink/20 px-4 py-2 text-sm hover:bg-ink/5 disabled:opacity-70"
+          >
+            <Building2 size={15} />
+            {createWorkspaceLoading ? 'Creating...' : 'New workspace'}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={openMembersSection}
+          className="inline-flex items-center gap-2 rounded-xl border border-ink/20 px-3 py-2 text-sm hover:bg-ink/5"
+          aria-label="Go to workspace members"
+        >
+          <Users size={15} />
+          Members
+        </button>
       </div>
-
-      {canManageMembers ? (
-        <article className="rounded-2xl border border-ink/10 bg-white p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="text-lg font-semibold">Workspace Members</h3>
-              <p className="text-sm text-ink/70">Only the workspace creator can add members.</p>
-            </div>
-            <span className="rounded-full bg-sand px-3 py-1 text-xs text-ink/70">
-              Creator: {activeWorkspace?.owner?.id === user?.id ? 'Yes' : 'No'}
-            </span>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <form
-              className="space-y-3 rounded-xl border border-ink/10 bg-sand/30 p-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleAddWorkspaceMember();
-              }}
-            >
-              <label className="block text-sm font-medium text-ink">Add member</label>
-              <select
-                aria-label="Member to add"
-                value={memberUserId}
-                onChange={(event) => setMemberUserId(event.target.value)}
-                className="w-full rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Select a user</option>
-                {memberOptions.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.name} · {candidate.email}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                aria-label="Member role"
-                value={memberRole}
-                onChange={(event) => setMemberRole(event.target.value as typeof memberRole)}
-                className="w-full rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm"
-              >
-                {workspaceRoles.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                type="submit"
-                disabled={addWorkspaceMemberLoading || !memberUserId}
-                className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
-              >
-                {addWorkspaceMemberLoading ? 'Adding...' : 'Add member'}
-              </button>
-            </form>
-
-            <div className="rounded-xl border border-ink/10 bg-sand/20 p-4">
-              <p className="text-sm font-medium text-ink">Current members</p>
-              <ul className="mt-3 space-y-2 text-sm">
-                {activeWorkspace?.members.map((member) => (
-                  <li key={member.user.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
-                    <div>
-                      <p className="font-medium">{member.user.name}</p>
-                      <p className="text-xs text-ink/60">{member.user.email}</p>
-                    </div>
-                    <span className="rounded-full bg-ink px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-mist">
-                      {member.role}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </article>
-      ) : null}
 
       {dashboardLoading ? (
         <p className="text-sm text-ink/70">Loading analytics...</p>
@@ -436,7 +422,7 @@ export function DashboardPage() {
             </p>
             <button
               type="button"
-              onClick={() => void handleCreateProject()}
+              onClick={openCreateProjectModal}
               disabled={createProjectLoading || !canCreateProject}
               className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
             >
@@ -466,6 +452,165 @@ export function DashboardPage() {
           </ul>
         )}
       </article>
+
+      {showCreateProject ? (
+        <CreateProjectModal
+          error={projectFormError}
+          loading={createProjectLoading}
+          onClose={() => setShowCreateProject(false)}
+          onSubmit={handleCreateProject}
+        />
+      ) : null}
+
+      {showCreateWorkspace ? (
+        <CreateWorkspaceModal
+          error={workspaceFormError}
+          loading={createWorkspaceLoading}
+          onClose={() => setShowCreateWorkspace(false)}
+          onSubmit={handleCreateWorkspace}
+        />
+      ) : null}
+
+      {showAddMember ? (
+        <AddWorkspaceMemberModal
+          error={addMemberFormError}
+          loading={addWorkspaceMemberLoading}
+          memberOptions={memberOptions}
+          onClose={() => setShowAddMember(false)}
+          onSubmit={handleAddWorkspaceMember}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function AddWorkspaceMemberModal({
+  error,
+  loading,
+  memberOptions,
+  onClose,
+  onSubmit,
+}: {
+  error: string;
+  loading: boolean;
+  memberOptions: Array<{ id: string; name: string; email: string }>;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-20 grid place-items-center bg-ink/30 p-4">
+      <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-float">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Add member</h2>
+          <button type="button" onClick={onClose} title="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        {error ? <p className="rounded-lg bg-ember/10 px-3 py-2 text-sm text-ember">{error}</p> : null}
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">User</span>
+          <select
+            name="userId"
+            required
+            defaultValue=""
+            className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm outline-none focus:border-aqua"
+          >
+            <option value="" disabled>
+              Select a user
+            </option>
+            {memberOptions.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.name} · {candidate.email}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {memberOptions.length === 0 ? (
+          <p className="text-xs text-ink/50">Every active user is already a member of this workspace.</p>
+        ) : null}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="rounded-xl border border-ink/10 px-4 py-2 text-sm">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading || memberOptions.length === 0}
+            className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
+          >
+            {loading ? 'Adding...' : 'Add member'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CreateWorkspaceModal({
+  error,
+  loading,
+  onClose,
+  onSubmit,
+}: {
+  error: string;
+  loading: boolean;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-20 grid place-items-center bg-ink/30 p-4">
+      <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-float">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Create workspace</h2>
+          <button type="button" onClick={onClose} title="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        {error ? <p className="rounded-lg bg-ember/10 px-3 py-2 text-sm text-ember">{error}</p> : null}
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">Workspace name</span>
+          <input
+            name="name"
+            required
+            minLength={2}
+            maxLength={120}
+            autoFocus
+            placeholder="e.g. Product Engineering"
+            className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm outline-none focus:border-aqua"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">
+            Description <span className="font-normal text-ink/50">(optional)</span>
+          </span>
+          <textarea
+            name="description"
+            rows={3}
+            maxLength={500}
+            placeholder="What's this workspace for?"
+            className="w-full rounded-xl border border-ink/10 px-3 py-2 text-sm outline-none focus:border-aqua"
+          />
+        </label>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="rounded-xl border border-ink/10 px-4 py-2 text-sm">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-xl bg-ink px-4 py-2 text-sm text-mist disabled:opacity-70"
+          >
+            {loading ? 'Creating...' : 'Create workspace'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

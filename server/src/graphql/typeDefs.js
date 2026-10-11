@@ -30,7 +30,7 @@ const typeDefs = `#graphql
     URGENT
   }
 
-  enum ProjectAccessLevel { VIEW EDIT MANAGE }
+  enum ProjectAccessLevel { VIEW EDIT }
 
   enum NotificationKind {
     INFO
@@ -295,6 +295,21 @@ const typeDefs = `#graphql
     assigneeId: ID
   }
 
+  input UpdateWorkspaceInput {
+    id: ID!
+    name: String
+    description: String
+  }
+
+  input UpdateProjectInput {
+    id: ID!
+    name: String
+    description: String
+    status: ProjectStatus
+    startDate: DateTime
+    dueDate: DateTime
+  }
+
   input AddCommentInput {
     taskId: ID!
     body: String!
@@ -343,10 +358,14 @@ const typeDefs = `#graphql
     resetAdminUserPassword(userId: ID!): User!
     changeAdminUserPassword(userId: ID!, password: String!): User!
     setUserActive(userId: ID!, isActive: Boolean!): User!
+    deleteAdminUser(userId: ID!): Boolean!
     setAdminTaskStatus(taskId: ID!, status: TaskStatus!): Task!
 
     createWorkspace(input: CreateWorkspaceInput!): Workspace!
+    updateWorkspace(input: UpdateWorkspaceInput!): Workspace!
+    deleteWorkspace(id: ID!): Boolean!
     addWorkspaceMember(input: AddWorkspaceMemberInput!): Workspace!
+    removeWorkspaceMember(workspaceId: ID!, userId: ID!): Workspace!
     addProjectMember(input: AddProjectMemberInput!): Project!
     updateProjectMemberAccess(input: UpdateProjectMemberAccessInput!): Project!
     removeProjectMember(projectId: ID!, userId: ID!): Project!
@@ -354,14 +373,25 @@ const typeDefs = `#graphql
     inviteUser(input: AddWorkspaceMemberInput!): Team!
 
     createProject(input: CreateProjectInput!): Project!
+    updateProject(input: UpdateProjectInput!): Project!
+    deleteProject(id: ID!): Boolean!
 
     createTask(input: CreateTaskInput!): Task!
     updateTask(input: UpdateTaskInput!): Task!
+    deleteTask(id: ID!): Boolean!
 
     addComment(input: AddCommentInput!): Comment!
 
     markNotificationRead(notificationId: ID!): Notification!
     markAllNotificationsRead: Boolean!
+  }
+
+  type Subscription {
+    taskChanged(projectId: ID!): Task!
+    commentAdded(taskId: ID!): Comment!
+    notificationAdded: Notification!
+    workspaceUpdated(workspaceId: ID!): Workspace!
+    projectUpdated(projectId: ID!): Project!
   }
 `;
 

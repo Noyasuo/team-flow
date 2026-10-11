@@ -5,8 +5,7 @@ const morgan = require('morgan');
 const { ApolloServer } = require('@apollo/server');
 const { expressMiddleware } = require('@as-integrations/express5');
 
-const { typeDefs } = require('./graphql/typeDefs');
-const { resolvers } = require('./graphql/resolvers');
+const { schema } = require('./graphql/schema');
 const { User } = require('./models');
 const { readBearerToken, verifyAuthToken } = require('./utils/auth');
 
@@ -23,8 +22,7 @@ async function createApp(env) {
   });
 
   const apolloServer = new ApolloServer({
-    typeDefs,
-    resolvers,
+    schema,
   });
 
   await apolloServer.start();

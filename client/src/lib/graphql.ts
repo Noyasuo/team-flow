@@ -69,6 +69,18 @@ export const CREATE_WORKSPACE = gql`
   }
 `;
 
+export const UPDATE_WORKSPACE = gql`
+  mutation UpdateWorkspace($input: UpdateWorkspaceInput!) {
+    updateWorkspace(input: $input) { id name description }
+  }
+`;
+
+export const DELETE_WORKSPACE = gql`
+  mutation DeleteWorkspace($id: ID!) {
+    deleteWorkspace(id: $id)
+  }
+`;
+
 export const USERS = gql`
   query Users($page: Int, $limit: Int) {
     users(page: $page, limit: $limit) {
@@ -89,6 +101,22 @@ export const USERS = gql`
 export const ADD_WORKSPACE_MEMBER = gql`
   mutation AddWorkspaceMember($input: AddWorkspaceMemberInput!) {
     addWorkspaceMember(input: $input) {
+      id
+      members {
+        role
+        user {
+          id
+          name
+          email
+        }
+      }
+    }
+  }
+`;
+
+export const REMOVE_WORKSPACE_MEMBER = gql`
+  mutation RemoveWorkspaceMember($workspaceId: ID!, $userId: ID!) {
+    removeWorkspaceMember(workspaceId: $workspaceId, userId: $userId) {
       id
       members {
         role
@@ -192,6 +220,12 @@ export const SET_USER_ACTIVE = gql`
   }
 `;
 
+export const DELETE_ADMIN_USER = gql`
+  mutation DeleteAdminUser($userId: ID!) {
+    deleteAdminUser(userId: $userId)
+  }
+`;
+
 export const SET_ADMIN_TASK_STATUS = gql`
   mutation SetAdminTaskStatus($taskId: ID!, $status: TaskStatus!) {
     setAdminTaskStatus(taskId: $taskId, status: $status) { id status }
@@ -228,7 +262,7 @@ export const PROJECT = gql`
         name
         owner { id }
         members {
-          user { id }
+          user { id name email }
           role
         }
       }
@@ -270,6 +304,18 @@ export const CREATE_PROJECT = gql`
         id
       }
     }
+  }
+`;
+
+export const UPDATE_PROJECT = gql`
+  mutation UpdateProject($input: UpdateProjectInput!) {
+    updateProject(input: $input) { id name status description }
+  }
+`;
+
+export const DELETE_PROJECT = gql`
+  mutation DeleteProject($id: ID!) {
+    deleteProject(id: $id)
   }
 `;
 
@@ -370,6 +416,12 @@ export const UPDATE_TASK = gql`
   }
 `;
 
+export const DELETE_TASK = gql`
+  mutation DeleteTask($id: ID!) {
+    deleteTask(id: $id)
+  }
+`;
+
 export const ADD_COMMENT = gql`
   mutation AddComment($input: AddCommentInput!) {
     addComment(input: $input) {
@@ -380,6 +432,46 @@ export const ADD_COMMENT = gql`
         id
         name
       }
+    }
+  }
+`;
+
+export const TASK_CHANGED_SUBSCRIPTION = gql`
+  subscription TaskChanged($projectId: ID!) {
+    taskChanged(projectId: $projectId) {
+      id
+    }
+  }
+`;
+
+export const COMMENT_ADDED_SUBSCRIPTION = gql`
+  subscription CommentAdded($taskId: ID!) {
+    commentAdded(taskId: $taskId) {
+      id
+    }
+  }
+`;
+
+export const NOTIFICATION_ADDED_SUBSCRIPTION = gql`
+  subscription NotificationAdded {
+    notificationAdded {
+      id
+    }
+  }
+`;
+
+export const WORKSPACE_UPDATED_SUBSCRIPTION = gql`
+  subscription WorkspaceUpdated($workspaceId: ID!) {
+    workspaceUpdated(workspaceId: $workspaceId) {
+      id
+    }
+  }
+`;
+
+export const PROJECT_UPDATED_SUBSCRIPTION = gql`
+  subscription ProjectUpdated($projectId: ID!) {
+    projectUpdated(projectId: $projectId) {
+      id
     }
   }
 `;
